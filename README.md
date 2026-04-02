@@ -112,7 +112,7 @@ dotnet add package NetPdf
 
 ## Requirements
 
-- .NET 8.0 or .NET Standard 2.0
+- .NET 10.0 or .NET Standard 2.0
 
 ## License
 
