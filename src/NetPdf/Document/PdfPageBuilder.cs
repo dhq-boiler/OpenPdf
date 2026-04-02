@@ -171,6 +171,46 @@ public sealed class PdfPageBuilder
     public void ClosePath() => _contentStream.Append("h\n");
     public void CloseAndStroke() => _contentStream.Append("s\n");
 
+    // Clipping
+    public void ClipRectangle(double x, double y, double width, double height)
+    {
+        Rectangle(x, y, width, height);
+        _contentStream.Append("W n\n");
+    }
+
+    public void Clip() => _contentStream.Append("W n\n");
+    public void ClipEvenOdd() => _contentStream.Append("W* n\n");
+
+    // Transparency / ExtGState
+    private readonly Dictionary<string, PdfDictionary> _extGStates = new();
+    private int _gsCounter;
+
+    public string SetTransparency(double fillAlpha = 1.0, double strokeAlpha = 1.0, string? blendMode = null)
+    {
+        string gsName = $"GS{++_gsCounter}";
+        var gs = new PdfDictionary();
+        gs["Type"] = new PdfName("ExtGState");
+        if (fillAlpha < 1.0) gs["ca"] = new PdfReal(fillAlpha);
+        if (strokeAlpha < 1.0) gs["CA"] = new PdfReal(strokeAlpha);
+        if (blendMode != null) gs["BM"] = new PdfName(blendMode);
+        _extGStates[gsName] = gs;
+        _contentStream.Append($"/{gsName} gs\n");
+        return gsName;
+    }
+
+    // CMYK color support
+    public void SetStrokeCmyk(double c, double m, double y, double k)
+    {
+        _contentStream.Append(string.Format(CultureInfo.InvariantCulture,
+            "{0:G} {1:G} {2:G} {3:G} K\n", c, m, y, k));
+    }
+
+    public void SetFillCmyk(double c, double m, double y, double k)
+    {
+        _contentStream.Append(string.Format(CultureInfo.InvariantCulture,
+            "{0:G} {1:G} {2:G} {3:G} k\n", c, m, y, k));
+    }
+
     public void CurveTo(double x1, double y1, double x2, double y2, double x3, double y3)
     {
         _contentStream.Append(string.Format(CultureInfo.InvariantCulture,
@@ -192,6 +232,35 @@ public sealed class PdfPageBuilder
         var imgStream = new PdfStream(imgDict, jpegData);
         _images[imageName] = (null!, imgStream); // Reference assigned during Build
         return imageName;
+    }
+
+    public string AddPngImage(byte[] pngData)
+    {
+        var (imgStream, w, h) = ImageDecoder.DecodePng(pngData);
+        string imageName = $"Im{++_imageCounter}";
+        _images[imageName] = (null!, imgStream);
+        return imageName;
+    }
+
+    public string AddBmpImage(byte[] bmpData)
+    {
+        var (imgStream, w, h) = ImageDecoder.DecodeBmp(bmpData);
+        string imageName = $"Im{++_imageCounter}";
+        _images[imageName] = (null!, imgStream);
+        return imageName;
+    }
+
+    public string AddImageFromFile(string path)
+    {
+        var data = File.ReadAllBytes(path);
+        var ext = Path.GetExtension(path).ToLowerInvariant();
+        return ext switch
+        {
+            ".png" => AddPngImage(data),
+            ".bmp" => AddBmpImage(data),
+            ".jpg" or ".jpeg" => AddJpegImage(data, 0, 0), // width/height from JPEG header not parsed
+            _ => throw new NotSupportedException($"Unsupported image format: {ext}")
+        };
     }
 
     public void DrawImage(string imageName, double x, double y, double width, double height)
@@ -266,6 +335,14 @@ public sealed class PdfPageBuilder
                 updatedImages[kvp.Key] = (imgRef, kvp.Value.Stream);
             }
             resources["XObject"] = xobjectDict;
+        }
+
+        if (_extGStates.Count > 0)
+        {
+            var gsDict = new PdfDictionary();
+            foreach (var kvp in _extGStates)
+                gsDict[kvp.Key] = kvp.Value;
+            resources["ExtGState"] = gsDict;
         }
 
         // Build page dictionary
