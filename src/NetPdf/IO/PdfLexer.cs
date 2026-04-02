@@ -12,6 +12,8 @@ public sealed class PdfLexer
         _stream = stream;
     }
 
+    public Stream BaseStream => _stream;
+
     public long Position
     {
         get => _stream.Position;

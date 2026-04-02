@@ -181,13 +181,7 @@ public sealed class PdfParser
         return new PdfStream(dict, data);
     }
 
-    private Stream GetBaseStream()
-    {
-        // Access the underlying stream through the lexer's Position
-        // We set lexer position which sets stream position
-        var field = typeof(PdfLexer).GetField("_stream", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        return (Stream)field!.GetValue(_lexer)!;
-    }
+    private Stream GetBaseStream() => _lexer.BaseStream;
 
     public PdfObject? ParseObjectAt(long offset)
     {
