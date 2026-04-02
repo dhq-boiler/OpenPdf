@@ -40,8 +40,9 @@ public sealed class CidFontBuilder
         var toUnicodeStream = new PdfStream(toUnicodeCMap);
         var toUnicodeRef = writer.AddObject(toUnicodeStream);
 
-        // Embed font file
-        var fontData = _ttf.RawData;
+        // Embed font file (subset)
+        var subsetter = new TrueTypeSubsetter(_ttf);
+        var fontData = subsetter.Subset(_usedChars);
         var flate = new FlateDecodeFilter();
         var compressedData = flate.Encode(fontData);
 
