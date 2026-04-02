@@ -155,6 +155,8 @@ public sealed class PdfParser
         // If b == '\n', we're already past the EOL
 
         long length = dict.GetInt("Length");
+        if (length > PdfLimits.MaxStreamLength)
+            throw new InvalidDataException($"Stream length {length} exceeds maximum ({PdfLimits.MaxStreamLength}).");
         byte[] data;
         if (length > 0)
         {

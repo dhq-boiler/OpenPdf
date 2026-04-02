@@ -14,7 +14,16 @@ public sealed class FlateDecodeFilter : PdfFilter
         using var input = new MemoryStream(data, 2, data.Length - 2);
         using var deflate = new DeflateStream(input, CompressionMode.Decompress);
         using var output = new MemoryStream();
-        deflate.CopyTo(output);
+        var buf = new byte[8192];
+        long totalRead = 0;
+        int read;
+        while ((read = deflate.Read(buf, 0, buf.Length)) > 0)
+        {
+            totalRead += read;
+            if (totalRead > PdfLimits.MaxDecompressedSize)
+                throw new InvalidDataException($"Decompressed stream exceeds maximum size ({PdfLimits.MaxDecompressedSize} bytes). Possible decompression bomb.");
+            output.Write(buf, 0, read);
+        }
         return output.ToArray();
     }
 

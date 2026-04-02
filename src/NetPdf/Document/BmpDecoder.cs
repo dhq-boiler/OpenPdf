@@ -33,8 +33,11 @@ internal static class BmpDecoder
 
         ms.Position = dataOffset;
 
+        long totalPixels = (long)width * height;
+        if (totalPixels > PdfLimits.MaxImagePixels)
+            throw new InvalidDataException($"BMP image dimensions ({width}x{height}) exceed maximum ({PdfLimits.MaxImagePixels} pixels).");
         int rowSize = ((width * bitsPerPixel + 31) / 32) * 4;
-        var rgbData = new byte[width * height * 3];
+        var rgbData = new byte[checked(width * height * 3)];
 
         for (int row = 0; row < height; row++)
         {

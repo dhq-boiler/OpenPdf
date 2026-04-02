@@ -64,6 +64,9 @@ internal static class PngDecoder
             0 => 1, 2 => 3, 4 => 2, 6 => 4, _ => 3
         };
         int bytesPerPixel = channels * (bitDepth / 8);
+        long totalPixels = (long)width * height;
+        if (totalPixels > PdfLimits.MaxImagePixels)
+            throw new InvalidDataException($"PNG image dimensions ({width}x{height}) exceed maximum ({PdfLimits.MaxImagePixels} pixels).");
         int stride = width * bytesPerPixel;
 
         var pixelData = new byte[height * stride];
