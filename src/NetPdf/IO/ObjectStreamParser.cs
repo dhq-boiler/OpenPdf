@@ -48,29 +48,5 @@ public sealed class ObjectStreamParser
         return result;
     }
 
-    private static byte[] DecodeData(PdfStream stream)
-    {
-        var data = stream.Data;
-        var filterObj = stream.Dictionary["Filter"];
-
-        if (filterObj is PdfName filterName)
-        {
-            var filter = FilterFactory.Create(filterName.Value);
-            if (filter != null)
-                data = filter.Decode(data);
-        }
-        else if (filterObj is PdfArray filterArray)
-        {
-            foreach (var f in filterArray.Items)
-            {
-                if (f is PdfName fn)
-                {
-                    var filter = FilterFactory.Create(fn.Value);
-                    if (filter != null)
-                        data = filter.Decode(data);
-                }
-            }
-        }
-        return data;
-    }
+    private static byte[] DecodeData(PdfStream stream) => StreamDecoder.Decode(stream);
 }

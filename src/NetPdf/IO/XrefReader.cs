@@ -197,31 +197,7 @@ public sealed class XrefReader
             ReadXrefSection(prev.Value, table);
     }
 
-    private byte[] DecodeStreamData(Objects.PdfStream stream)
-    {
-        var data = stream.Data;
-        var filterObj = stream.Dictionary["Filter"];
-
-        if (filterObj is Objects.PdfName filterName)
-        {
-            var filter = Filters.FilterFactory.Create(filterName.Value);
-            if (filter != null)
-                data = filter.Decode(data);
-        }
-        else if (filterObj is Objects.PdfArray filterArray)
-        {
-            foreach (var f in filterArray.Items)
-            {
-                if (f is Objects.PdfName fn)
-                {
-                    var filter = Filters.FilterFactory.Create(fn.Value);
-                    if (filter != null)
-                        data = filter.Decode(data);
-                }
-            }
-        }
-        return data;
-    }
+    private static byte[] DecodeStreamData(Objects.PdfStream stream) => Filters.StreamDecoder.Decode(stream);
 
     private static long ReadFieldValue(byte[] data, int offset, int width, long defaultValue)
     {
