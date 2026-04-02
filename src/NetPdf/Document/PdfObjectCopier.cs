@@ -14,12 +14,17 @@ internal sealed class PdfObjectCopier
         _reader = reader;
     }
 
+    public PdfObjectCopier(PdfReader reader, PdfWriter writer)
+    {
+        _reader = reader;
+        _writer = writer;
+    }
+
     public void CopyPages(List<int> pageIndices, Stream output)
     {
         _writer = new PdfWriter(output);
         _objectMap.Clear();
 
-        // Build new page tree
         var pagesDict = new PdfDictionary();
         pagesDict["Type"] = PdfName.Pages;
         pagesDict["Count"] = new PdfInteger(pageIndices.Count);
@@ -43,24 +48,20 @@ internal sealed class PdfObjectCopier
         _writer.Write(catalogRef);
     }
 
-    private PdfDictionary CopyPageDict(PdfDictionary source, PdfIndirectReference newParent)
+    public PdfDictionary CopyPageDict(PdfDictionary source, PdfIndirectReference newParent)
     {
         var result = new PdfDictionary();
         foreach (var kvp in source.Entries)
         {
             if (kvp.Key == "Parent")
-            {
                 result["Parent"] = newParent;
-            }
             else
-            {
                 result[kvp.Key] = DeepCopy(kvp.Value);
-            }
         }
         return result;
     }
 
-    private PdfObject DeepCopy(PdfObject obj)
+    public PdfObject DeepCopy(PdfObject obj)
     {
         switch (obj)
         {
@@ -102,7 +103,7 @@ internal sealed class PdfObjectCopier
             }
 
             default:
-                return obj; // Immutable types: PdfInteger, PdfReal, PdfString, PdfName, PdfBoolean, PdfNull
+                return obj;
         }
     }
 }
