@@ -4,9 +4,9 @@ namespace NetPdf.Document;
 
 public sealed class PdfAValidationResult
 {
-    public bool IsValid { get; init; }
-    public List<string> Errors { get; init; } = new();
-    public List<string> Warnings { get; init; } = new();
+    public bool IsValid { get; set; }
+    public List<string> Errors { get; set; } = new();
+    public List<string> Warnings { get; set; } = new();
 }
 
 public sealed class PdfAValidator
