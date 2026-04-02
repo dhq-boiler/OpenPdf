@@ -47,10 +47,37 @@ public sealed class PdfReader : IDisposable
         if (entry == null || !entry.InUse)
             return null;
 
-        var obj = _parser.ParseObjectAt(entry.Offset);
+        PdfObject? obj;
+        if (entry.Type == 2)
+        {
+            // Object is in an object stream
+            obj = GetObjectFromStream(entry.ObjectStreamNumber, objectNumber);
+        }
+        else
+        {
+            obj = _parser.ParseObjectAt(entry.Offset);
+        }
+
         if (obj != null)
             _objectCache[objectNumber] = obj;
         return obj;
+    }
+
+    private PdfObject? GetObjectFromStream(int streamObjNumber, int targetObjNumber)
+    {
+        // Get the object stream itself (must be type 1)
+        var streamEntry = _xrefTable.GetEntry(streamObjNumber);
+        if (streamEntry == null || !streamEntry.InUse) return null;
+
+        var streamObj = _parser.ParseObjectAt(streamEntry.Offset) as PdfStream;
+        if (streamObj == null) return null;
+
+        // Parse all objects in the stream and cache them
+        var objects = IO.ObjectStreamParser.Parse(streamObj);
+        foreach (var kvp in objects)
+            _objectCache.TryAdd(kvp.Key, kvp.Value);
+
+        return objects.TryGetValue(targetObjNumber, out var result) ? result : null;
     }
 
     public PdfObject? ResolveReference(PdfObject? obj)

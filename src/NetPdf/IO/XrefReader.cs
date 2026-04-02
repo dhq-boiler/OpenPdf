@@ -181,9 +181,11 @@ public sealed class XrefReader
                         table.AddEntry(new XrefEntry(objNum, field2, (int)field3, true));
                         break;
                     case 2: // compressed object in object stream
-                        // field2 = object stream number, field3 = index within stream
-                        // Store as a special entry; offset = stream obj number for now
-                        table.AddEntry(new XrefEntry(objNum, field2, (int)field3, true));
+                        var entry2 = new XrefEntry(objNum, 0, 0, true);
+                        entry2.Type = 2;
+                        entry2.ObjectStreamNumber = (int)field2;
+                        entry2.IndexInStream = (int)field3;
+                        table.AddEntry(entry2);
                         break;
                 }
             }
