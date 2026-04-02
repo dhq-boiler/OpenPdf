@@ -53,7 +53,7 @@ public sealed class PdfEncryption
 
         // Try as owner password
         var userPassword = RecoverUserPasswordFromOwner(password);
-        key = ComputeEncryptionKey(Encoding.GetEncoding("iso-8859-1").GetString(userPassword));
+        key = ComputeEncryptionKey(PdfEncoding.Latin1.GetString(userPassword));
         if (ValidateUserPassword(key))
         {
             EncryptionKey = key;
@@ -94,7 +94,7 @@ public sealed class PdfEncryption
 
     private byte[] ComputeEncryptionKey(string password)
     {
-        var padded = PadPassword(Encoding.GetEncoding("iso-8859-1").GetBytes(password));
+        var padded = PadPassword(PdfEncoding.Latin1.GetBytes(password));
 
         using var md5 = MD5.Create();
         md5.TransformBlock(padded, 0, 32, null, 0);
@@ -165,7 +165,7 @@ public sealed class PdfEncryption
 
     private byte[] RecoverUserPasswordFromOwner(string ownerPassword)
     {
-        var padded = PadPassword(Encoding.GetEncoding("iso-8859-1").GetBytes(ownerPassword));
+        var padded = PadPassword(PdfEncoding.Latin1.GetBytes(ownerPassword));
         var hash = MD5.HashData(padded);
 
         if (Revision >= 3)
@@ -294,7 +294,7 @@ public sealed class PdfEncryption
         var ownerHash = ComputeOwnerHash(userPassword, ownerPassword, keyBytes, revision);
 
         // Compute encryption key
-        var padded = PadPassword(Encoding.GetEncoding("iso-8859-1").GetBytes(userPassword));
+        var padded = PadPassword(PdfEncoding.Latin1.GetBytes(userPassword));
         using var md5 = MD5.Create();
         md5.TransformBlock(padded, 0, 32, null, 0);
         md5.TransformBlock(ownerHash, 0, ownerHash.Length, null, 0);
@@ -352,7 +352,7 @@ public sealed class PdfEncryption
 
     private static byte[] ComputeOwnerHash(string userPassword, string ownerPassword, int keyBytes, int revision)
     {
-        var ownerPadded = PadPassword(Encoding.GetEncoding("iso-8859-1").GetBytes(
+        var ownerPadded = PadPassword(PdfEncoding.Latin1.GetBytes(
             string.IsNullOrEmpty(ownerPassword) ? userPassword : ownerPassword));
         var hash = MD5.HashData(ownerPadded);
 
@@ -365,7 +365,7 @@ public sealed class PdfEncryption
         var key = new byte[keyBytes];
         Array.Copy(hash, key, keyBytes);
 
-        var userPadded = PadPassword(Encoding.GetEncoding("iso-8859-1").GetBytes(userPassword));
+        var userPadded = PadPassword(PdfEncoding.Latin1.GetBytes(userPassword));
         var result = Rc4Transform(userPadded, key);
 
         if (revision >= 3)

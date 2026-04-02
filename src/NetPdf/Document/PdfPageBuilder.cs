@@ -287,7 +287,7 @@ public sealed class PdfPageBuilder
         var additionalObjects = new List<PdfObject>();
 
         // Build content stream
-        var contentData = Encoding.GetEncoding("iso-8859-1").GetBytes(_contentStream.ToString());
+        var contentData = PdfEncoding.Latin1.GetBytes(_contentStream.ToString());
         PdfStream contentStream;
         if (compressContent && contentData.Length > 0)
         {

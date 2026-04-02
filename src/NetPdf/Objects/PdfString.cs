@@ -13,9 +13,9 @@ public sealed class PdfString : PdfObject
         IsHex = isHex;
     }
 
-    public PdfString(string value) : this(Encoding.GetEncoding("iso-8859-1").GetBytes(value)) { }
+    public PdfString(string value) : this(PdfEncoding.Latin1.GetBytes(value)) { }
 
-    public string GetText() => Encoding.GetEncoding("iso-8859-1").GetString(Value);
+    public string GetText() => PdfEncoding.Latin1.GetString(Value);
 
     public override void WriteTo(Stream stream)
     {

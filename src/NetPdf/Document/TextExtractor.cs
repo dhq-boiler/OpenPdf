@@ -102,7 +102,7 @@ public sealed class TextExtractor
             if (subtype == "Type0")
                 maps[kvp.Key] = DecodeIdentityH;
             else
-                maps[kvp.Key] = bytes => Encoding.GetEncoding("iso-8859-1").GetString(bytes);
+                maps[kvp.Key] = bytes => PdfEncoding.Latin1.GetString(bytes);
         }
 
         return maps;
@@ -135,7 +135,7 @@ public sealed class TextExtractor
     private string ParseContentStream(byte[] data, Dictionary<string, Func<byte[], string>> fontMaps)
     {
         var sb = new StringBuilder();
-        var text = Encoding.GetEncoding("iso-8859-1").GetString(data);
+        var text = PdfEncoding.Latin1.GetString(data);
         Func<byte[], string>? currentDecoder = null;
 
         var tokens = ContentStreamTokenizer.Tokenize(text);
@@ -210,13 +210,13 @@ public sealed class TextExtractor
         else if (operand.StartsWith("(") && operand.EndsWith(")"))
         {
             var inner = operand.Substring(1, operand.Length - 2);
-            bytes = Encoding.GetEncoding("iso-8859-1").GetBytes(inner);
+            bytes = PdfEncoding.Latin1.GetBytes(inner);
         }
         else
         {
             return operand;
         }
-        return decoder != null ? decoder(bytes) : Encoding.GetEncoding("iso-8859-1").GetString(bytes);
+        return decoder != null ? decoder(bytes) : PdfEncoding.Latin1.GetString(bytes);
     }
 
     private string DecodeTJArray(string arrayStr, Func<byte[], string>? decoder)

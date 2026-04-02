@@ -139,7 +139,7 @@ public sealed class PdfLexer
                 sb.Add((byte)b);
             }
         }
-        return new PdfToken(PdfTokenType.LiteralString, Encoding.GetEncoding("iso-8859-1").GetString(sb.ToArray()), pos);
+        return new PdfToken(PdfTokenType.LiteralString, PdfEncoding.Latin1.GetString(sb.ToArray()), pos);
     }
 
     private PdfToken ReadHexString(long pos)
@@ -162,7 +162,7 @@ public sealed class PdfLexer
         var bytes = new byte[hex.Length / 2];
         for (int i = 0; i < bytes.Length; i++)
             bytes[i] = Convert.ToByte(hex.Substring(i * 2, 2), 16);
-        return new PdfToken(PdfTokenType.HexString, Encoding.GetEncoding("iso-8859-1").GetString(bytes), pos);
+        return new PdfToken(PdfTokenType.HexString, PdfEncoding.Latin1.GetString(bytes), pos);
     }
 
     private PdfToken ReadName(long pos)

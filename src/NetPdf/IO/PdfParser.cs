@@ -69,10 +69,10 @@ public sealed class PdfParser
                 return new PdfReal(double.Parse(token.Value, CultureInfo.InvariantCulture));
 
             case PdfTokenType.LiteralString:
-                return new PdfString(System.Text.Encoding.GetEncoding("iso-8859-1").GetBytes(token.Value));
+                return new PdfString(PdfEncoding.Latin1.GetBytes(token.Value));
 
             case PdfTokenType.HexString:
-                return new PdfString(System.Text.Encoding.GetEncoding("iso-8859-1").GetBytes(token.Value), isHex: true);
+                return new PdfString(PdfEncoding.Latin1.GetBytes(token.Value), isHex: true);
 
             case PdfTokenType.Name:
                 return new PdfName(token.Value);

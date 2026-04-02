@@ -97,7 +97,7 @@ public sealed class PdfWriter : IDisposable
 
     private void WriteRaw(string text)
     {
-        var bytes = Encoding.GetEncoding("iso-8859-1").GetBytes(text);
+        var bytes = PdfEncoding.Latin1.GetBytes(text);
         _stream.Write(bytes, 0, bytes.Length);
     }
 

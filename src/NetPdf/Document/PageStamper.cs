@@ -108,7 +108,7 @@ public sealed class PageStamper
         }
 
         // Append new content stream
-        var contentData = Encoding.GetEncoding("iso-8859-1").GetBytes(newContent);
+        var contentData = PdfEncoding.Latin1.GetBytes(newContent);
         var existingContents = pageDict["Contents"];
 
         // Create a new stream for the stamp
