@@ -41,11 +41,18 @@ public sealed class XrefReader
         if (lines.Length == 0)
             throw new InvalidDataException("Cannot find xref offset");
 
-        return long.Parse(lines[0].Trim(), CultureInfo.InvariantCulture);
+        if (!long.TryParse(lines[0].Trim(), CultureInfo.InvariantCulture, out long xrefOffset))
+            throw new InvalidDataException("Invalid startxref value");
+        if (xrefOffset < 0 || xrefOffset >= _stream.Length)
+            throw new InvalidDataException($"startxref offset {xrefOffset} is out of range (file length: {_stream.Length})");
+        return xrefOffset;
     }
 
     private void ReadXrefSection(long offset, XrefTable table)
     {
+        if (offset < 0 || offset >= _stream.Length)
+            throw new InvalidDataException($"Invalid xref offset: {offset} (file length: {_stream.Length})");
+
         _stream.Position = offset;
         var line = ReadLine().Trim();
 
