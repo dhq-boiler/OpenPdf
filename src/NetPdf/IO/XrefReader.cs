@@ -48,8 +48,12 @@ public sealed class XrefReader
         return xrefOffset;
     }
 
+    private int _prevChainDepth;
+
     private void ReadXrefSection(long offset, XrefTable table)
     {
+        if (++_prevChainDepth > PdfLimits.MaxXrefPrevChain)
+            throw new InvalidDataException($"Xref Prev chain exceeds maximum depth ({PdfLimits.MaxXrefPrevChain}). Possible circular reference.");
         if (offset < 0 || offset >= _stream.Length)
             throw new InvalidDataException($"Invalid xref offset: {offset} (file length: {_stream.Length})");
 
@@ -145,6 +149,10 @@ public sealed class XrefReader
         int w0 = (int)((Objects.PdfInteger)wArray[0]).Value;
         int w1 = (int)((Objects.PdfInteger)wArray[1]).Value;
         int w2 = (int)((Objects.PdfInteger)wArray[2]).Value;
+        if (w0 < 0 || w0 > PdfLimits.MaxXrefFieldWidth ||
+            w1 < 0 || w1 > PdfLimits.MaxXrefFieldWidth ||
+            w2 < 0 || w2 > PdfLimits.MaxXrefFieldWidth)
+            throw new InvalidDataException($"Invalid xref stream W values: [{w0}, {w1}, {w2}]");
         int entrySize = w0 + w1 + w2;
 
         // Read Index array (default: [0 Size])

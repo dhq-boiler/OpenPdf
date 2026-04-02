@@ -61,8 +61,13 @@ internal sealed class PdfObjectCopier
         return result;
     }
 
-    public PdfObject DeepCopy(PdfObject obj)
+    public PdfObject DeepCopy(PdfObject obj) => DeepCopy(obj, 0);
+
+    private PdfObject DeepCopy(PdfObject obj, int depth)
     {
+        if (depth > PdfLimits.MaxRecursionDepth)
+            throw new InvalidDataException("Object nesting exceeds maximum depth. Possible circular reference.");
+
         switch (obj)
         {
             case PdfIndirectReference reference:
@@ -72,7 +77,7 @@ internal sealed class PdfObjectCopier
                 var resolved = _reader.GetObject(reference.ObjectNumber);
                 if (resolved == null)
                     return reference;
-                var copied = DeepCopy(resolved);
+                var copied = DeepCopy(resolved, depth + 1);
                 var newRef = _writer!.AddObject(copied);
                 _objectMap[reference.ObjectNumber] = newRef;
                 return newRef;
@@ -82,7 +87,7 @@ internal sealed class PdfObjectCopier
             {
                 var result = new PdfDictionary();
                 foreach (var kvp in dict.Entries)
-                    result[kvp.Key] = DeepCopy(kvp.Value);
+                    result[kvp.Key] = DeepCopy(kvp.Value, depth + 1);
                 return result;
             }
 
@@ -90,7 +95,7 @@ internal sealed class PdfObjectCopier
             {
                 var result = new PdfArray();
                 foreach (var item in array.Items)
-                    result.Add(DeepCopy(item));
+                    result.Add(DeepCopy(item, depth + 1));
                 return result;
             }
 
@@ -98,7 +103,7 @@ internal sealed class PdfObjectCopier
             {
                 var newDict = new PdfDictionary();
                 foreach (var kvp in stream.Dictionary.Entries)
-                    newDict[kvp.Key] = DeepCopy(kvp.Value);
+                    newDict[kvp.Key] = DeepCopy(kvp.Value, depth + 1);
                 return new PdfStream(newDict, stream.Data);
             }
 

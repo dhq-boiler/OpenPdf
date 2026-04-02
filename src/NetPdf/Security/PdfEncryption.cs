@@ -224,9 +224,10 @@ public sealed class PdfEncryption
         return padded;
     }
 
+    [Obsolete("RC4 is cryptographically broken. Use AES encryption for new documents.")]
     public static byte[] Rc4Transform(byte[] data, byte[] key)
     {
-        // RC4 (ARC4) implementation
+        // RC4 (ARC4) implementation - kept for PDF compatibility, not recommended for new use
         var s = new byte[256];
         for (int i = 0; i < 256; i++) s[i] = (byte)i;
 

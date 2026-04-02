@@ -42,7 +42,10 @@ public sealed class TrueTypeFont
 
     public static TrueTypeFont Load(string path, int collectionIndex = 0)
     {
-        var data = File.ReadAllBytes(path);
+        var fullPath = Path.GetFullPath(path);
+        if (!File.Exists(fullPath))
+            throw new FileNotFoundException("Font file not found.", fullPath);
+        var data = File.ReadAllBytes(fullPath);
         return Load(data, collectionIndex);
     }
 

@@ -126,8 +126,11 @@ public sealed class PdfReader : IPdfReader
         return pages;
     }
 
-    private PdfDictionary? FindPage(PdfDictionary node, int targetIndex, ref int currentIndex)
+    private PdfDictionary? FindPage(PdfDictionary node, int targetIndex, ref int currentIndex, int depth = 0)
     {
+        if (depth > PdfLimits.MaxRecursionDepth)
+            throw new InvalidDataException("Page tree exceeds maximum nesting depth. Possible circular reference.");
+
         var type = node.GetName("Type");
         if (type == "Page")
         {
@@ -157,7 +160,7 @@ public sealed class PdfReader : IPdfReader
                 }
             }
 
-            var result = FindPage(kidDict, targetIndex, ref currentIndex);
+            var result = FindPage(kidDict, targetIndex, ref currentIndex, depth + 1);
             if (result != null) return result;
         }
         return null;
