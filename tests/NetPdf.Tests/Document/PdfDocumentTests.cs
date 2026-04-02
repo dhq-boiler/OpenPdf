@@ -32,6 +32,7 @@ public class PdfDocumentTests
         using var ms = new MemoryStream();
         using (var doc = PdfDocument.Create(ms))
         {
+            doc.CompressContent = false;
             var page = doc.AddPage();
             var font = page.AddFont("Helvetica");
             page.DrawText(font, 24, 100, 700, "Hello World");
@@ -51,6 +52,7 @@ public class PdfDocumentTests
         using var ms = new MemoryStream();
         using (var doc = PdfDocument.Create(ms))
         {
+            doc.CompressContent = false;
             var page = doc.AddPage();
             page.SetLineWidth(2);
             page.SetStrokeColor(1, 0, 0);
@@ -72,6 +74,7 @@ public class PdfDocumentTests
         using var ms = new MemoryStream();
         using (var doc = PdfDocument.Create(ms))
         {
+            doc.CompressContent = false;
             var page1 = doc.AddPage();
             var font1 = page1.AddFont("Helvetica");
             page1.DrawText(font1, 12, 100, 700, "Page 1");
