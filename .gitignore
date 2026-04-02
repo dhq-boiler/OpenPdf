@@ -3,3 +3,4 @@ obj/
 .vs/
 *.user
 *.pdf
+.claude/settings.local.json
