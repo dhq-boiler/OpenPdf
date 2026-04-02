@@ -153,21 +153,26 @@ public sealed class TrueTypeFont
         pos += 2; // version
         ushort numSubtables = ReadUInt16(pos); pos += 2;
 
-        // Find a Unicode subtable: prefer (3,1) Windows Unicode BMP, then (0,*)
+        // Find a Unicode subtable: prefer (3,10) Windows full Unicode, then (3,1) BMP, then (0,*)
         int bestOffset = -1;
+        int bestPriority = 0; // higher is better
         for (int i = 0; i < numSubtables; i++)
         {
             ushort platformId = ReadUInt16(pos); pos += 2;
             ushort encodingId = ReadUInt16(pos); pos += 2;
             uint subtableOffset = ReadUInt32(pos); pos += 4;
 
-            if (platformId == 3 && encodingId == 1)
+            int priority = 0;
+            if (platformId == 3 && encodingId == 10) // Windows Unicode full repertoire
+                priority = 3;
+            else if (platformId == 3 && encodingId == 1) // Windows Unicode BMP
+                priority = 2;
+            else if (platformId == 0) // Unicode default
+                priority = 1;
+
+            if (priority > bestPriority)
             {
-                bestOffset = (int)(table.Offset + subtableOffset);
-                break;
-            }
-            if (platformId == 0 && bestOffset < 0)
-            {
+                bestPriority = priority;
                 bestOffset = (int)(table.Offset + subtableOffset);
             }
         }
@@ -250,7 +255,7 @@ public sealed class TrueTypeFont
             uint startCharCode = ReadUInt32(pos); pos += 4;
             uint endCharCode = ReadUInt32(pos); pos += 4;
             uint startGlyphId = ReadUInt32(pos); pos += 4;
-            for (uint c = startCharCode; c <= endCharCode && c <= 0xFFFF; c++)
+            for (uint c = startCharCode; c <= endCharCode && c <= 0x10FFFF; c++)
             {
                 _unicodeToGlyph[(int)c] = (ushort)(startGlyphId + (c - startCharCode));
             }
@@ -312,6 +317,11 @@ public sealed class TrueTypeFont
         return _unicodeToGlyph.TryGetValue(c, out var gid) ? gid : (ushort)0;
     }
 
+    public ushort GetGlyphId(int codePoint)
+    {
+        return _unicodeToGlyph.TryGetValue(codePoint, out var gid) ? gid : (ushort)0;
+    }
+
     public ushort GetGlyphWidth(ushort glyphId)
     {
         return _glyphWidths.TryGetValue(glyphId, out var w) ? w : (ushort)0;
@@ -320,6 +330,12 @@ public sealed class TrueTypeFont
     public int GetCharWidth(char c)
     {
         var gid = GetGlyphId(c);
+        return GetGlyphWidth(gid);
+    }
+
+    public int GetCharWidth(int codePoint)
+    {
+        var gid = GetGlyphId(codePoint);
         return GetGlyphWidth(gid);
     }
 

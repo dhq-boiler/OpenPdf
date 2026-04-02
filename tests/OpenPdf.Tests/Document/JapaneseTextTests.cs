@@ -6,7 +6,7 @@ namespace OpenPdf.Tests.Document;
 public class JapaneseTextTests
 {
     private const string MeiryoPath = @"C:\Windows\Fonts\meiryo.ttc";
-    private const string OutputPath = @"C:\Git\netpdf\test_output_japanese.pdf";
+    private static readonly string OutputPath = Path.Combine(Path.GetTempPath(), "test_output_japanese.pdf");
 
     private static bool FontExists() => File.Exists(MeiryoPath);
 

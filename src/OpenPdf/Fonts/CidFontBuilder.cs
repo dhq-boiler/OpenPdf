@@ -9,7 +9,7 @@ namespace OpenPdf.Fonts;
 public sealed class CidFontBuilder
 {
     private readonly TrueTypeFont _ttf;
-    private readonly HashSet<char> _usedChars = new();
+    private readonly HashSet<int> _usedCodePoints = new();
 
     public CidFontBuilder(TrueTypeFont ttf)
     {
@@ -18,18 +18,18 @@ public sealed class CidFontBuilder
 
     public void AddCharacters(string text)
     {
-        foreach (var ch in text)
-            _usedChars.Add(ch);
+        foreach (var cp in EnumerateCodePoints(text))
+            _usedCodePoints.Add(cp);
     }
 
     public (PdfDictionary Type0Font, List<PdfObject> AdditionalObjects) Build(PdfWriter writer)
     {
-        var usedGlyphs = new SortedDictionary<ushort, char>(); // GID → Unicode
-        foreach (var ch in _usedChars)
+        var usedGlyphs = new SortedDictionary<ushort, int>(); // GID → Unicode code point
+        foreach (var cp in _usedCodePoints)
         {
-            var gid = _ttf.GetGlyphId(ch);
-            if (gid != 0 || ch == ' ')
-                usedGlyphs[gid] = ch;
+            var gid = _ttf.GetGlyphId(cp);
+            if (gid != 0 || cp == ' ')
+                usedGlyphs[gid] = cp;
         }
 
         // Build W (widths) array for CIDFont
@@ -42,7 +42,7 @@ public sealed class CidFontBuilder
 
         // Embed font file (subset)
         var subsetter = new TrueTypeSubsetter(_ttf);
-        var fontData = subsetter.Subset(_usedChars);
+        var fontData = subsetter.Subset(_usedCodePoints);
         var flate = new FlateDecodeFilter();
         var compressedData = flate.Encode(fontData);
 
@@ -102,7 +102,7 @@ public sealed class CidFontBuilder
         return (type0Font, new List<PdfObject>());
     }
 
-    private PdfArray BuildWidthsArray(SortedDictionary<ushort, char> usedGlyphs)
+    private PdfArray BuildWidthsArray(SortedDictionary<ushort, int> usedGlyphs)
     {
         double scale = 1000.0 / _ttf.UnitsPerEm;
         var wArray = new PdfArray();
@@ -127,7 +127,7 @@ public sealed class CidFontBuilder
         return wArray;
     }
 
-    private byte[] BuildToUnicodeCMap(SortedDictionary<ushort, char> usedGlyphs)
+    private byte[] BuildToUnicodeCMap(SortedDictionary<ushort, int> usedGlyphs)
     {
         var sb = new StringBuilder();
         sb.AppendLine("/CIDInit /ProcSet findresource begin");
@@ -150,8 +150,18 @@ public sealed class CidFontBuilder
             for (int j = 0; j < count; j++)
             {
                 var gid = entries[i + j].Key;
-                var unicode = entries[i + j].Value;
-                sb.AppendLine($"<{gid:X4}> <{(int)unicode:X4}>");
+                var codePoint = entries[i + j].Value;
+                if (codePoint <= 0xFFFF)
+                {
+                    sb.AppendLine($"<{gid:X4}> <{codePoint:X4}>");
+                }
+                else
+                {
+                    // Supplementary plane: encode as UTF-16 surrogate pair
+                    int high = 0xD800 + ((codePoint - 0x10000) >> 10);
+                    int low = 0xDC00 + ((codePoint - 0x10000) & 0x3FF);
+                    sb.AppendLine($"<{gid:X4}> <{high:X4}{low:X4}>");
+                }
             }
             sb.AppendLine("endbfchar");
         }
@@ -166,15 +176,15 @@ public sealed class CidFontBuilder
 
     public byte[] EncodeString(string text)
     {
-        // Encode text as GID pairs (big-endian 16-bit)
-        var result = new byte[text.Length * 2];
-        for (int i = 0; i < text.Length; i++)
+        // Encode text as GID pairs (big-endian 16-bit) per code point
+        var result = new List<byte>();
+        foreach (var cp in EnumerateCodePoints(text))
         {
-            var gid = _ttf.GetGlyphId(text[i]);
-            result[i * 2] = (byte)(gid >> 8);
-            result[i * 2 + 1] = (byte)(gid & 0xFF);
+            var gid = _ttf.GetGlyphId(cp);
+            result.Add((byte)(gid >> 8));
+            result.Add((byte)(gid & 0xFF));
         }
-        return result;
+        return result.ToArray();
     }
 
     public string EncodeStringAsHex(string text)
@@ -190,8 +200,24 @@ public sealed class CidFontBuilder
     {
         double scale = fontSize / _ttf.UnitsPerEm;
         double width = 0;
-        foreach (var ch in text)
-            width += _ttf.GetCharWidth(ch) * scale;
+        foreach (var cp in EnumerateCodePoints(text))
+            width += _ttf.GetCharWidth(cp) * scale;
         return width;
+    }
+
+    internal static IEnumerable<int> EnumerateCodePoints(string text)
+    {
+        for (int i = 0; i < text.Length; i++)
+        {
+            if (char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+            {
+                yield return char.ConvertToUtf32(text[i], text[i + 1]);
+                i++;
+            }
+            else
+            {
+                yield return text[i];
+            }
+        }
     }
 }

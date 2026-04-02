@@ -19,13 +19,18 @@ public sealed class TrueTypeSubsetter
         ParseMaxp();
     }
 
-    public byte[] Subset(IEnumerable<char> characters)
+    public byte[] Subset(string text)
+    {
+        return Subset(CidFontBuilder.EnumerateCodePoints(text));
+    }
+
+    public byte[] Subset(IEnumerable<int> codePoints)
     {
         // Collect all needed glyph IDs (always include glyph 0 = .notdef)
         var glyphIds = new SortedSet<ushort> { 0 };
-        foreach (var ch in characters)
+        foreach (var cp in codePoints)
         {
-            var gid = _font.GetGlyphId(ch);
+            var gid = _font.GetGlyphId(cp);
             if (gid != 0)
                 glyphIds.Add(gid);
         }
@@ -46,7 +51,7 @@ public sealed class TrueTypeSubsetter
         tables["maxp"] = BuildMaxpTable(glyphList.Count);
         tables["OS/2"] = CopyTable("OS/2");
         tables["name"] = CopyTable("name");
-        tables["cmap"] = BuildCmapTable(characters, oldToNew);
+        tables["cmap"] = BuildCmapTable(codePoints, oldToNew);
         tables["post"] = BuildPostTable();
 
         var (locaTable, glyfTable) = BuildLocaGlyfTables(glyphList);
@@ -167,24 +172,44 @@ public sealed class TrueTypeSubsetter
         return maxp;
     }
 
-    private byte[] BuildCmapTable(IEnumerable<char> characters, Dictionary<ushort, ushort> oldToNew)
+    private byte[] BuildCmapTable(IEnumerable<int> codePoints, Dictionary<ushort, ushort> oldToNew)
     {
-        // Build format 4 cmap subtable
-        var charToNewGid = new SortedDictionary<ushort, ushort>();
-        foreach (var ch in characters)
+        var cpToNewGid = new SortedDictionary<int, ushort>();
+        foreach (var cp in codePoints)
         {
-            var oldGid = _font.GetGlyphId(ch);
+            var oldGid = _font.GetGlyphId(cp);
             if (oldGid != 0 && oldToNew.TryGetValue(oldGid, out var newGid))
-                charToNewGid[(ushort)ch] = newGid;
+                cpToNewGid[cp] = newGid;
         }
 
+        bool hasSupplementary = cpToNewGid.Keys.Any(cp => cp > 0xFFFF);
+
+        using var ms = new MemoryStream();
+        using var bw = new BinaryWriter(ms);
+
+        if (hasSupplementary)
+        {
+            // Use Format 12 for full Unicode support
+            BuildCmapWithFormat12(bw, cpToNewGid);
+        }
+        else
+        {
+            // Use Format 4 for BMP-only (more compatible)
+            BuildCmapWithFormat4(bw, cpToNewGid);
+        }
+
+        return ms.ToArray();
+    }
+
+    private void BuildCmapWithFormat4(BinaryWriter bw, SortedDictionary<int, ushort> cpToNewGid)
+    {
         // Build segments
         var segments = new List<(ushort Start, ushort End, short IdDelta)>();
-        var charList = charToNewGid.ToList();
+        var charList = cpToNewGid.ToList();
         int i = 0;
         while (i < charList.Count)
         {
-            ushort startCode = charList[i].Key;
+            ushort startCode = (ushort)charList[i].Key;
             ushort startGid = charList[i].Value;
             ushort endCode = startCode;
             int j = i + 1;
@@ -192,7 +217,7 @@ public sealed class TrueTypeSubsetter
                    charList[j].Key == endCode + 1 &&
                    charList[j].Value == startGid + (charList[j].Key - startCode))
             {
-                endCode = charList[j].Key;
+                endCode = (ushort)charList[j].Key;
                 j++;
             }
             short delta = (short)(startGid - startCode);
@@ -207,9 +232,6 @@ public sealed class TrueTypeSubsetter
         while (searchRange * 2 <= segCount) { searchRange *= 2; entrySelector++; }
         searchRange *= 2;
         int rangeShift = segCount * 2 - searchRange;
-
-        using var ms = new MemoryStream();
-        using var bw = new BinaryWriter(ms);
 
         // cmap header
         WriteUInt16(bw, 0); // version
@@ -234,8 +256,87 @@ public sealed class TrueTypeSubsetter
         foreach (var seg in segments) WriteUInt16(bw, seg.Start);
         foreach (var seg in segments) WriteInt16(bw, seg.IdDelta);
         foreach (var _ in segments) WriteUInt16(bw, 0); // idRangeOffset all 0
+    }
 
-        return ms.ToArray();
+    private void BuildCmapWithFormat12(BinaryWriter bw, SortedDictionary<int, ushort> cpToNewGid)
+    {
+        // Build groups for Format 12
+        var groups = new List<(uint StartCharCode, uint EndCharCode, uint StartGlyphId)>();
+        var charList = cpToNewGid.ToList();
+        int i = 0;
+        while (i < charList.Count)
+        {
+            uint startCode = (uint)charList[i].Key;
+            uint startGid = charList[i].Value;
+            uint endCode = startCode;
+            int j = i + 1;
+            while (j < charList.Count &&
+                   (uint)charList[j].Key == endCode + 1 &&
+                   charList[j].Value == startGid + ((uint)charList[j].Key - startCode))
+            {
+                endCode = (uint)charList[j].Key;
+                j++;
+            }
+            groups.Add((startCode, endCode, startGid));
+            i = j;
+        }
+
+        // cmap header: two encoding records (format 4 for BMP compat + format 12 for full)
+        WriteUInt16(bw, 0); // version
+        WriteUInt16(bw, 2); // numTables
+
+        // Encoding record 1: platform 3, encoding 1 (BMP) → format 4 at offset 20
+        WriteUInt16(bw, 3);
+        WriteUInt16(bw, 1);
+        uint format4Offset = 20;
+        WriteUInt32(bw, format4Offset);
+
+        // Encoding record 2: platform 3, encoding 10 (full) → format 12 after format 4
+        WriteUInt16(bw, 3);
+        WriteUInt16(bw, 10);
+        // We'll fill in the offset after writing format 4
+
+        long format12OffsetPos = bw.BaseStream.Position - 4;
+
+        // Write a minimal format 4 (just the terminator segment)
+        long format4Start = bw.BaseStream.Position;
+        int segCount = 1;
+        int searchRange = 2;
+        int subtableLength = 14 + segCount * 8;
+        WriteUInt16(bw, 4); // format
+        WriteUInt16(bw, (ushort)subtableLength);
+        WriteUInt16(bw, 0); // language
+        WriteUInt16(bw, (ushort)(segCount * 2));
+        WriteUInt16(bw, (ushort)searchRange);
+        WriteUInt16(bw, 0); // entrySelector
+        WriteUInt16(bw, 0); // rangeShift
+        WriteUInt16(bw, 0xFFFF); // endCode
+        WriteUInt16(bw, 0); // reservedPad
+        WriteUInt16(bw, 0xFFFF); // startCode
+        WriteInt16(bw, 1); // idDelta
+        WriteUInt16(bw, 0); // idRangeOffset
+
+        // Patch format 12 offset
+        long format12Start = bw.BaseStream.Position;
+        long currentPos = bw.BaseStream.Position;
+        bw.BaseStream.Position = format12OffsetPos;
+        WriteUInt32(bw, (uint)(format12Start - 0)); // offset from start of cmap table (which is at 0)
+        bw.BaseStream.Position = currentPos;
+
+        // Write format 12 subtable
+        uint numGroups = (uint)groups.Count;
+        uint format12Length = 16 + numGroups * 12;
+        WriteUInt16(bw, 12); // format
+        WriteUInt16(bw, 0); // reserved
+        WriteUInt32(bw, format12Length); // length
+        WriteUInt32(bw, 0); // language
+        WriteUInt32(bw, numGroups);
+        foreach (var (startChar, endChar, startGlyph) in groups)
+        {
+            WriteUInt32(bw, startChar);
+            WriteUInt32(bw, endChar);
+            WriteUInt32(bw, startGlyph);
+        }
     }
 
     private (byte[] Loca, byte[] Glyf) BuildLocaGlyfTables(List<ushort> glyphList)
