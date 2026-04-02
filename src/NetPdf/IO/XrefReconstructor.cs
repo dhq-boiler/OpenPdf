@@ -74,7 +74,7 @@ public sealed class XrefReconstructor
                 lineStart--;
 
             var before = text.Substring(lineStart, objIdx - lineStart).Trim();
-            var parts = before.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var parts = before.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length >= 2 &&
                 int.TryParse(parts[parts.Length - 2], out int objNum) &&
                 int.TryParse(parts[parts.Length - 1], out int genNum))

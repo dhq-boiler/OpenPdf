@@ -120,7 +120,7 @@ public sealed class PdfEncryption
         {
             for (int i = 0; i < 50; i++)
             {
-                hash = MD5.HashData(hash.AsSpan(0, KeyLength));
+                hash = Md5HashData(hash, KeyLength);
             }
         }
 
@@ -166,12 +166,12 @@ public sealed class PdfEncryption
     private byte[] RecoverUserPasswordFromOwner(string ownerPassword)
     {
         var padded = PadPassword(PdfEncoding.Latin1.GetBytes(ownerPassword));
-        var hash = MD5.HashData(padded);
+        var hash = Md5HashData(padded);
 
         if (Revision >= 3)
         {
             for (int i = 0; i < 50; i++)
-                hash = MD5.HashData(hash);
+                hash = Md5HashData(hash);
         }
 
         var key = new byte[KeyLength];
@@ -208,7 +208,7 @@ public sealed class PdfEncryption
         buf[pos++] = (byte)(generationNumber & 0xFF);
         buf[pos++] = (byte)((generationNumber >> 8) & 0xFF);
 
-        var hash = MD5.HashData(buf);
+        var hash = Md5HashData(buf);
         int keyLen = Math.Min(EncryptionKey.Length + 5, 16);
         var objKey = new byte[keyLen];
         Array.Copy(hash, objKey, keyLen);
@@ -222,6 +222,31 @@ public sealed class PdfEncryption
         Array.Copy(password, padded, len);
         Array.Copy(PasswordPadding, 0, padded, len, 32 - len);
         return padded;
+    }
+
+    private static byte[] Md5HashData(byte[] data)
+    {
+        using var md5 = MD5.Create();
+        return md5.ComputeHash(data);
+    }
+
+    private static byte[] Md5HashData(byte[] data, int length)
+    {
+        using var md5 = MD5.Create();
+        return md5.ComputeHash(data, 0, length);
+    }
+
+    private static byte[] CopyBytes(byte[] source, int length)
+    {
+        var result = new byte[length];
+        Array.Copy(source, result, Math.Min(source.Length, length));
+        return result;
+    }
+
+    private static void FillRandom(byte[] data)
+    {
+        using var rng = RandomNumberGenerator.Create();
+        rng.GetBytes(data);
     }
 
     [Obsolete("RC4 is cryptographically broken. Use AES encryption for new documents.")]
@@ -259,7 +284,7 @@ public sealed class PdfEncryption
         Array.Copy(data, 16, encrypted, 0, encrypted.Length);
 
         using var aes = Aes.Create();
-        aes.Key = key.Length >= 16 ? key.AsSpan(0, 16).ToArray() : PadKey(key, 16);
+        aes.Key = key.Length >= 16 ? CopyBytes(key, 16) : PadKey(key, 16);
         aes.IV = iv;
         aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.PKCS7;
@@ -290,7 +315,7 @@ public sealed class PdfEncryption
         int revision = keyLength > 40 ? 3 : 2;
 
         var fileId = new byte[16];
-        RandomNumberGenerator.Fill(fileId);
+        FillRandom(fileId);
 
         var ownerHash = ComputeOwnerHash(userPassword, ownerPassword, keyBytes, revision);
 
@@ -308,7 +333,7 @@ public sealed class PdfEncryption
         if (revision >= 3)
         {
             for (int i = 0; i < 50; i++)
-                hash = MD5.HashData(hash.AsSpan(0, keyBytes));
+                hash = Md5HashData(hash, keyBytes);
         }
         var encKey = new byte[keyBytes];
         Array.Copy(hash, encKey, keyBytes);
@@ -355,12 +380,12 @@ public sealed class PdfEncryption
     {
         var ownerPadded = PadPassword(PdfEncoding.Latin1.GetBytes(
             string.IsNullOrEmpty(ownerPassword) ? userPassword : ownerPassword));
-        var hash = MD5.HashData(ownerPadded);
+        var hash = Md5HashData(ownerPadded);
 
         if (revision >= 3)
         {
             for (int i = 0; i < 50; i++)
-                hash = MD5.HashData(hash);
+                hash = Md5HashData(hash);
         }
 
         var key = new byte[keyBytes];

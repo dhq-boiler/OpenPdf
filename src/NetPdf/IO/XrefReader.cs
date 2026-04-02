@@ -41,7 +41,7 @@ public sealed class XrefReader
         if (lines.Length == 0)
             throw new InvalidDataException("Cannot find xref offset");
 
-        if (!long.TryParse(lines[0].Trim(), CultureInfo.InvariantCulture, out long xrefOffset))
+        if (!long.TryParse(lines[0].Trim(), System.Globalization.NumberStyles.Integer, CultureInfo.InvariantCulture, out long xrefOffset))
             throw new InvalidDataException("Invalid startxref value");
         if (xrefOffset < 0 || xrefOffset >= _stream.Length)
             throw new InvalidDataException($"startxref offset {xrefOffset} is out of range (file length: {_stream.Length})");
@@ -82,7 +82,7 @@ public sealed class XrefReader
             if (line.StartsWith("trailer", StringComparison.Ordinal))
                 break;
 
-            var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var parts = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length != 2)
                 continue;
 
@@ -97,7 +97,7 @@ public sealed class XrefReader
 
                 // Each entry: nnnnnnnnnn ggggg n/f
                 var entryText = entryLine.Trim();
-                var entryParts = entryText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var entryParts = entryText.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
                 if (entryParts.Length < 3) continue;
 
                 long entryOffset = long.Parse(entryParts[0], CultureInfo.InvariantCulture);

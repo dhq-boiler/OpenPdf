@@ -26,5 +26,5 @@ public sealed class PdfIndirectReference : PdfObject
         ObjectNumber == other.ObjectNumber &&
         GenerationNumber == other.GenerationNumber;
 
-    public override int GetHashCode() => HashCode.Combine(ObjectNumber, GenerationNumber);
+    public override int GetHashCode() => (ObjectNumber * 397) ^ GenerationNumber;
 }
