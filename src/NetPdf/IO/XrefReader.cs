@@ -197,7 +197,7 @@ public sealed class XrefReader
             ReadXrefSection(prev.Value, table);
     }
 
-    private static byte[] DecodeStreamData(Objects.PdfStream stream) => Filters.StreamDecoder.Decode(stream);
+    private static byte[] DecodeStreamData(Objects.PdfStream stream) => Filters.StreamDecoder.DecodeStream(stream);
 
     private static long ReadFieldValue(byte[] data, int offset, int width, long defaultValue)
     {

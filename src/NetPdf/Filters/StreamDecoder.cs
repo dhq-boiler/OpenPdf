@@ -2,9 +2,16 @@ using NetPdf.Objects;
 
 namespace NetPdf.Filters;
 
-public static class StreamDecoder
+public interface IStreamDecoder
 {
-    public static byte[] Decode(PdfStream stream)
+    byte[] Decode(PdfStream stream);
+}
+
+public sealed class StreamDecoder : IStreamDecoder
+{
+    public static readonly StreamDecoder Default = new();
+
+    public byte[] Decode(PdfStream stream)
     {
         var data = stream.Data;
         var filterObj = stream.Dictionary["Filter"];
@@ -29,4 +36,7 @@ public static class StreamDecoder
         }
         return data;
     }
+
+    // Keep static method for backward compatibility
+    public static byte[] DecodeStream(PdfStream stream) => Default.Decode(stream);
 }

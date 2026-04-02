@@ -48,5 +48,5 @@ public sealed class ObjectStreamParser
         return result;
     }
 
-    private static byte[] DecodeData(PdfStream stream) => StreamDecoder.Decode(stream);
+    private static byte[] DecodeData(PdfStream stream) => StreamDecoder.DecodeStream(stream);
 }
