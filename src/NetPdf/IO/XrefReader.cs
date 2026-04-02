@@ -115,10 +115,119 @@ public sealed class XrefReader
 
     private void ReadXrefStream(XrefTable table)
     {
-        // TODO: Implement cross-reference stream parsing for PDF 1.5+
         var parser = new PdfParser(new PdfLexer(_stream));
         var obj = parser.ParseObject();
-        // For now, fall back to basic handling
+
+        if (obj is not Objects.PdfStream xrefStream)
+            throw new InvalidDataException("Expected xref stream object");
+
+        var dict = xrefStream.Dictionary;
+
+        // The xref stream dictionary also serves as the trailer
+        if (table.Trailer == null)
+            table.Trailer = dict;
+
+        // Decode the stream data
+        var data = DecodeStreamData(xrefStream);
+
+        // Read W array: sizes of each field
+        var wArray = dict.Get<Objects.PdfArray>("W");
+        if (wArray == null || wArray.Count < 3)
+            throw new InvalidDataException("Invalid W array in xref stream");
+
+        int w0 = (int)((Objects.PdfInteger)wArray[0]).Value;
+        int w1 = (int)((Objects.PdfInteger)wArray[1]).Value;
+        int w2 = (int)((Objects.PdfInteger)wArray[2]).Value;
+        int entrySize = w0 + w1 + w2;
+
+        // Read Index array (default: [0 Size])
+        int[] indices;
+        var indexArray = dict.Get<Objects.PdfArray>("Index");
+        if (indexArray != null)
+        {
+            indices = new int[indexArray.Count];
+            for (int i = 0; i < indexArray.Count; i++)
+                indices[i] = (int)((Objects.PdfInteger)indexArray[i]).Value;
+        }
+        else
+        {
+            int size = (int)dict.GetInt("Size");
+            indices = new[] { 0, size };
+        }
+
+        int pos = 0;
+        for (int s = 0; s < indices.Length; s += 2)
+        {
+            int startObj = indices[s];
+            int count = indices[s + 1];
+            for (int i = 0; i < count; i++)
+            {
+                if (pos + entrySize > data.Length) break;
+
+                long type = ReadFieldValue(data, pos, w0, 1); // default type=1
+                pos += w0;
+                long field2 = ReadFieldValue(data, pos, w1, 0);
+                pos += w1;
+                long field3 = ReadFieldValue(data, pos, w2, 0);
+                pos += w2;
+
+                int objNum = startObj + i;
+                switch (type)
+                {
+                    case 0: // free object
+                        table.AddEntry(new XrefEntry(objNum, field2, (int)field3, false));
+                        break;
+                    case 1: // uncompressed object
+                        table.AddEntry(new XrefEntry(objNum, field2, (int)field3, true));
+                        break;
+                    case 2: // compressed object in object stream
+                        // field2 = object stream number, field3 = index within stream
+                        // Store as a special entry; offset = stream obj number for now
+                        table.AddEntry(new XrefEntry(objNum, field2, (int)field3, true));
+                        break;
+                }
+            }
+        }
+
+        // Follow Prev link
+        var prev = dict.Get<Objects.PdfInteger>("Prev");
+        if (prev != null)
+            ReadXrefSection(prev.Value, table);
+    }
+
+    private byte[] DecodeStreamData(Objects.PdfStream stream)
+    {
+        var data = stream.Data;
+        var filterObj = stream.Dictionary["Filter"];
+
+        if (filterObj is Objects.PdfName filterName)
+        {
+            var filter = Filters.FilterFactory.Create(filterName.Value);
+            if (filter != null)
+                data = filter.Decode(data);
+        }
+        else if (filterObj is Objects.PdfArray filterArray)
+        {
+            foreach (var f in filterArray.Items)
+            {
+                if (f is Objects.PdfName fn)
+                {
+                    var filter = Filters.FilterFactory.Create(fn.Value);
+                    if (filter != null)
+                        data = filter.Decode(data);
+                }
+            }
+        }
+        return data;
+    }
+
+    private static long ReadFieldValue(byte[] data, int offset, int width, long defaultValue)
+    {
+        if (width == 0) return defaultValue;
+        long value = 0;
+        for (int i = 0; i < width; i++)
+            value = (value << 8) | data[offset + i];
+        return value;
     }
 
     private string ReadLine()
