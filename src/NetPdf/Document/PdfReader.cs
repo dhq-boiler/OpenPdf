@@ -60,6 +60,32 @@ public sealed class PdfReader : IDisposable
         return obj;
     }
 
+    public byte[] DecodeStream(PdfStream stream)
+    {
+        var data = stream.Data;
+        var filterObj = stream.Dictionary["Filter"];
+
+        if (filterObj is PdfName filterName)
+        {
+            var filter = Filters.FilterFactory.Create(filterName.Value);
+            if (filter != null)
+                data = filter.Decode(data);
+        }
+        else if (filterObj is PdfArray filterArray)
+        {
+            foreach (var f in filterArray.Items)
+            {
+                if (f is PdfName fn)
+                {
+                    var filter = Filters.FilterFactory.Create(fn.Value);
+                    if (filter != null)
+                        data = filter.Decode(data);
+                }
+            }
+        }
+        return data;
+    }
+
     public PdfDictionary? GetCatalog()
     {
         var rootRef = Trailer.Get<PdfIndirectReference>("Root");
