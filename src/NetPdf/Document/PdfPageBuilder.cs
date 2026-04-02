@@ -14,6 +14,7 @@ public sealed class PdfPageBuilder
     private readonly Dictionary<string, PdfDictionary> _fonts = new();
     private readonly Dictionary<string, CidFontBuilder> _cidFonts = new();
     private readonly Dictionary<string, (PdfIndirectReference Reference, PdfStream Stream)> _images = new();
+    private readonly List<PdfDictionary> _annotations = new();
     private int _fontCounter;
     private int _imageCounter;
 
@@ -207,6 +208,11 @@ public sealed class PdfPageBuilder
         _contentStream.Append(content);
     }
 
+    internal void AddAnnotationInternal(PdfDictionary annotation)
+    {
+        _annotations.Add(annotation);
+    }
+
     internal (PdfDictionary PageDict, List<PdfObject> AdditionalObjects) Build(PdfWriter writer, PdfIndirectReference pagesRef, bool compressContent = true)
     {
         var additionalObjects = new List<PdfObject>();
@@ -273,6 +279,17 @@ public sealed class PdfPageBuilder
         });
         pageDict["Contents"] = contentRef;
         pageDict["Resources"] = resources;
+
+        if (_annotations.Count > 0)
+        {
+            var annots = new PdfArray();
+            foreach (var annot in _annotations)
+            {
+                var annotRef = writer.AddObject(annot);
+                annots.Add(annotRef);
+            }
+            pageDict["Annots"] = annots;
+        }
 
         return (pageDict, additionalObjects);
     }
