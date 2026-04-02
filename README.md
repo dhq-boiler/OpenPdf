@@ -1,4 +1,4 @@
-# NetPdf
+# OpenPdf
 
 A pure C# PDF library with zero external dependencies. Read, write, and edit PDF files.
 
@@ -27,7 +27,7 @@ A pure C# PDF library with zero external dependencies. Read, write, and edit PDF
 ### Generate a PDF
 
 ```csharp
-using NetPdf.Document;
+using OpenPdf.Document;
 
 using var doc = PdfDocument.Create("output.pdf");
 var page = doc.AddPage();
@@ -39,8 +39,8 @@ doc.Save();
 ### Japanese Text (CJK)
 
 ```csharp
-using NetPdf.Document;
-using NetPdf.Fonts;
+using OpenPdf.Document;
+using OpenPdf.Fonts;
 
 using var doc = PdfDocument.Create("japanese.pdf");
 var page = doc.AddPage(595, 842); // A4
@@ -53,7 +53,7 @@ doc.Save();
 ### Read a PDF
 
 ```csharp
-using NetPdf.Document;
+using OpenPdf.Document;
 
 using var reader = PdfReader.Open("input.pdf");
 Console.WriteLine($"Pages: {reader.PageCount}");
@@ -66,7 +66,7 @@ Console.WriteLine(extractor.ExtractAllText());
 ### Merge PDFs
 
 ```csharp
-using NetPdf.Document;
+using OpenPdf.Document;
 
 PdfMerger.Merge(
     new[] { "file1.pdf", "file2.pdf", "file3.pdf" },
@@ -88,7 +88,7 @@ table.Draw(72, 700);
 ### QR Code
 
 ```csharp
-using NetPdf.Barcode;
+using OpenPdf.Barcode;
 
 QrCodeEncoder.DrawQrCode(page, "https://example.com", 72, 600, moduleSize: 4);
 ```
@@ -107,7 +107,7 @@ doc.Save();
 ## Installation
 
 ```
-dotnet add package NetPdf
+dotnet add package OpenPdf
 ```
 
 ## Requirements

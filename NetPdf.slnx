@@ -1,8 +1,0 @@
-<Solution>
-  <Folder Name="/src/">
-    <Project Path="src/NetPdf/NetPdf.csproj" />
-  </Folder>
-  <Folder Name="/tests/">
-    <Project Path="tests/NetPdf.Tests/NetPdf.Tests.csproj" />
-  </Folder>
-</Solution>
