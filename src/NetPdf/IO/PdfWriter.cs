@@ -4,7 +4,7 @@ using NetPdf.Objects;
 
 namespace NetPdf.IO;
 
-public sealed class PdfWriter : IDisposable
+public sealed class PdfWriter : IPdfWriter
 {
     private readonly Stream _stream;
     private readonly bool _ownsStream;

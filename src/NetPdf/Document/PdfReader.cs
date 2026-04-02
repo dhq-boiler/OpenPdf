@@ -3,7 +3,7 @@ using NetPdf.Objects;
 
 namespace NetPdf.Document;
 
-public sealed class PdfReader : IDisposable
+public sealed class PdfReader : IPdfReader
 {
     private readonly Stream _stream;
     private readonly bool _ownsStream;
@@ -87,7 +87,7 @@ public sealed class PdfReader : IDisposable
         return obj;
     }
 
-    public byte[] DecodeStream(PdfStream stream) => Filters.StreamDecoder.Decode(stream);
+    public byte[] DecodeStream(PdfStream stream) => Filters.StreamDecoder.DecodeStream(stream);
 
     public PdfDictionary? GetCatalog()
     {
