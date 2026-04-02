@@ -11,6 +11,8 @@ public sealed class PdfDocument : IDisposable
     private readonly List<PdfPageBuilder> _pages = new();
     private PdfDictionary? _info;
 
+    public bool CompressContent { get; set; } = true;
+
     public PdfDocument(Stream stream, bool ownsStream = false)
     {
         _stream = stream;
@@ -70,7 +72,7 @@ public sealed class PdfDocument : IDisposable
         var pageRefs = new PdfArray();
         foreach (var pageBuilder in _pages)
         {
-            var (pageDict, additionalObjects) = pageBuilder.Build(_writer, pagesRef);
+            var (pageDict, additionalObjects) = pageBuilder.Build(_writer, pagesRef, CompressContent);
             var pageRef = _writer.AddObject(pageDict);
             pageRefs.Add(pageRef);
         }

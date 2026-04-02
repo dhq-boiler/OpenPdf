@@ -207,13 +207,24 @@ public sealed class PdfPageBuilder
         _contentStream.Append(content);
     }
 
-    internal (PdfDictionary PageDict, List<PdfObject> AdditionalObjects) Build(PdfWriter writer, PdfIndirectReference pagesRef)
+    internal (PdfDictionary PageDict, List<PdfObject> AdditionalObjects) Build(PdfWriter writer, PdfIndirectReference pagesRef, bool compressContent = true)
     {
         var additionalObjects = new List<PdfObject>();
 
         // Build content stream
         var contentData = Encoding.GetEncoding("iso-8859-1").GetBytes(_contentStream.ToString());
-        var contentStream = new PdfStream(contentData);
+        PdfStream contentStream;
+        if (compressContent && contentData.Length > 0)
+        {
+            var flate = new Filters.FlateDecodeFilter();
+            var compressed = flate.Encode(contentData);
+            contentStream = new PdfStream(compressed);
+            contentStream.Dictionary[PdfName.Filter] = PdfName.FlateDecode;
+        }
+        else
+        {
+            contentStream = new PdfStream(contentData);
+        }
         var contentRef = writer.AddObject(contentStream);
 
         // Build resources
