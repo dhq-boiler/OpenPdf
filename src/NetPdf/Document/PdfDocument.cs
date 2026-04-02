@@ -10,8 +10,12 @@ public sealed class PdfDocument : IDisposable
     private readonly bool _ownsStream;
     private readonly List<PdfPageBuilder> _pages = new();
     private PdfDictionary? _info;
+    private PdfOutlineBuilder? _outlines;
+    private PdfStream? _xmpStream;
 
     public bool CompressContent { get; set; } = true;
+
+    public PdfOutlineBuilder Outlines => _outlines ??= new PdfOutlineBuilder();
 
     public PdfDocument(Stream stream, bool ownsStream = false)
     {
@@ -47,6 +51,11 @@ public sealed class PdfDocument : IDisposable
         if (creator != null) _info["Creator"] = new PdfString(creator);
     }
 
+    internal void SetXmpMetadataInternal(PdfStream xmpStream)
+    {
+        _xmpStream = xmpStream;
+    }
+
     public void Save()
     {
         // Build the object graph
@@ -70,13 +79,30 @@ public sealed class PdfDocument : IDisposable
             infoRef = _writer.AddObject(_info);
 
         var pageRefs = new PdfArray();
+        var pageRefList = new List<PdfIndirectReference>();
         foreach (var pageBuilder in _pages)
         {
             var (pageDict, additionalObjects) = pageBuilder.Build(_writer, pagesRef, CompressContent);
             var pageRef = _writer.AddObject(pageDict);
             pageRefs.Add(pageRef);
+            pageRefList.Add(pageRef);
         }
         pagesDict["Kids"] = pageRefs;
+
+        // Outlines (bookmarks)
+        if (_outlines != null)
+        {
+            var outlinesRef = _outlines.Build(_writer, pageRefList);
+            if (outlinesRef != null)
+                catalogDict["Outlines"] = outlinesRef;
+        }
+
+        // XMP Metadata
+        if (_xmpStream != null)
+        {
+            var xmpRef = _writer.AddObject(_xmpStream);
+            catalogDict["Metadata"] = xmpRef;
+        }
 
         _writer.Write(catalogRef, _info);
     }
