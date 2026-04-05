@@ -48,8 +48,16 @@ public sealed class PdfParser
                     }
                     if (next2.Type == PdfTokenType.Keyword && next2.Value == "obj")
                     {
+                        int objNum = (int)intVal;
+                        int genNum = int.Parse(next.Value, CultureInfo.InvariantCulture);
                         // Parse the contained object
                         var obj = ParseObject();
+                        // Tag streams with their object/generation numbers for decryption
+                        if (obj is PdfStream pdfStream)
+                        {
+                            pdfStream.ObjectNumber = objNum;
+                            pdfStream.GenerationNumber = genNum;
+                        }
                         // Consume "endobj"
                         var endToken = _lexer.NextToken();
                         // endobj might follow stream/endstream, which is handled in stream parsing

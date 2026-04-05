@@ -1,5 +1,6 @@
 using OpenPdf.IO;
 using OpenPdf.Objects;
+using OpenPdf.Security;
 
 namespace OpenPdf.Document;
 
@@ -10,10 +11,12 @@ public sealed class PdfReader : IPdfReader
     private readonly XrefTable _xrefTable;
     private readonly PdfParser _parser;
     private readonly Dictionary<int, PdfObject> _objectCache = new();
+    private PdfEncryption? _encryption;
 
     public string Version { get; }
     public PdfDictionary Trailer => _xrefTable.Trailer!;
     public int PageCount { get; private set; }
+    public bool IsEncrypted => _encryption != null;
 
     private PdfReader(Stream stream, bool ownsStream)
     {
@@ -24,6 +27,7 @@ public sealed class PdfReader : IPdfReader
         Version = ReadVersion();
         var xrefReader = new XrefReader(stream);
         _xrefTable = xrefReader.Read();
+        InitEncryption();
         PageCount = CountPages();
     }
 
@@ -87,7 +91,15 @@ public sealed class PdfReader : IPdfReader
         return obj;
     }
 
-    public byte[] DecodeStream(PdfStream stream) => Filters.StreamDecoder.DecodeStream(stream);
+    public byte[] DecodeStream(PdfStream stream)
+    {
+        if (_encryption != null && stream.ObjectNumber > 0)
+        {
+            var decrypted = _encryption.DecryptObject(stream.Data, stream.ObjectNumber, stream.GenerationNumber);
+            return Filters.StreamDecoder.DecodeStream(stream, decrypted);
+        }
+        return Filters.StreamDecoder.DecodeStream(stream);
+    }
 
     public PdfDictionary? GetCatalog()
     {
@@ -194,6 +206,27 @@ public sealed class PdfReader : IPdfReader
             return header.Substring(5).Trim();
         }
         return "1.4";
+    }
+
+    private void InitEncryption()
+    {
+        if (_xrefTable.Trailer == null) return;
+        var encryptRef = Trailer["Encrypt"];
+        if (encryptRef == null) return;
+
+        // Need to resolve without decryption (encryption dict is never encrypted)
+        var encryptDict = ResolveReference(encryptRef) as PdfDictionary;
+        if (encryptDict == null) return;
+
+        var fileId = Trailer.Get<PdfArray>("ID");
+        _encryption = new PdfEncryption(encryptDict, fileId);
+
+        // Try empty password authentication (most common for view-only PDFs)
+        if (!_encryption.AuthenticateEmpty())
+        {
+            // Cannot decrypt without password, disable encryption handling
+            _encryption = null;
+        }
     }
 
     public void Dispose()

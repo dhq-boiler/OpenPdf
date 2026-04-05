@@ -6,6 +6,8 @@ public sealed class PdfStream : PdfObject
 {
     public PdfDictionary Dictionary { get; }
     public byte[] Data { get; set; }
+    public int ObjectNumber { get; set; }
+    public int GenerationNumber { get; set; }
 
     public PdfStream(PdfDictionary dictionary, byte[] data)
     {
