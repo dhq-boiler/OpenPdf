@@ -32,6 +32,16 @@ public sealed class PdfWriter : IPdfWriter
         return new PdfIndirectReference(objectNumber, 0);
     }
 
+    public PdfObject? GetObject(int objectNumber)
+    {
+        for (int i = 0; i < _objects.Count; i++)
+        {
+            if (_objects[i].ObjectNumber == objectNumber)
+                return _objects[i].Object;
+        }
+        return null;
+    }
+
     public void Write(PdfIndirectReference rootRef, PdfDictionary? infoDict = null)
     {
         WriteHeader();
