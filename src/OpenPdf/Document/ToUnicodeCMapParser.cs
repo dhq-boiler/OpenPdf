@@ -12,10 +12,22 @@ internal static class ToUnicodeCMapParser
 
         bool inBfChar = false;
         bool inBfRange = false;
+        string? pendingArrayLine = null;
 
         foreach (var rawLine in lines)
         {
             var line = rawLine.Trim();
+            if (line.Length == 0) continue;
+
+            // Handle multi-line array accumulation
+            if (pendingArrayLine != null)
+            {
+                pendingArrayLine += " " + line;
+                if (!line.Contains(']')) continue;
+                line = pendingArrayLine;
+                pendingArrayLine = null;
+            }
+
             if (line.Contains("beginbfchar")) { inBfChar = true; continue; }
             if (line.Contains("endbfchar")) { inBfChar = false; continue; }
             if (line.Contains("beginbfrange")) { inBfRange = true; continue; }
@@ -33,14 +45,33 @@ internal static class ToUnicodeCMapParser
             }
             else if (inBfRange)
             {
+                // Check for multi-line array form
+                if (line.Contains('[') && !line.Contains(']'))
+                {
+                    pendingArrayLine = line;
+                    continue;
+                }
+
                 var parts = ExtractHexParts(line);
                 if (parts.Count >= 3)
                 {
                     ushort start = ParseHex16(parts[0]);
                     ushort end = ParseHex16(parts[1]);
-                    ushort dstStart = ParseHex16(parts[2]);
-                    for (ushort c = start; c <= end; c++)
-                        map[c] = char.ConvertFromUtf32(dstStart + (c - start));
+                    if (line.Contains('['))
+                    {
+                        // Array form: <start> <end> [<u1> <u2> ...]
+                        for (int idx = 0; idx <= end - start && idx + 2 < parts.Count; idx++)
+                        {
+                            map[(ushort)(start + idx)] = HexToUnicodeString(parts[idx + 2]);
+                        }
+                    }
+                    else
+                    {
+                        // Range form: <start> <end> <dstStart>
+                        int dstStart = Convert.ToInt32(parts[2], 16);
+                        for (ushort c = start; c <= end; c++)
+                            map[c] = char.ConvertFromUtf32(dstStart + (c - start));
+                    }
                 }
             }
         }
@@ -68,13 +99,15 @@ internal static class ToUnicodeCMapParser
     internal static string HexToUnicodeString(string hex)
     {
         var sb = new StringBuilder();
-        for (int i = 0; i < hex.Length; i += 4)
+        for (int i = 0; i + 3 < hex.Length; i += 4)
         {
-            if (i + 4 <= hex.Length)
-            {
-                int cp = Convert.ToInt32(hex.Substring(i, 4), 16);
-                sb.Append(char.ConvertFromUtf32(cp));
-            }
+            int cp = Convert.ToInt32(hex.Substring(i, 4), 16);
+            sb.Append(char.ConvertFromUtf32(cp));
+        }
+        if (sb.Length == 0 && hex.Length >= 2)
+        {
+            int cp = Convert.ToInt32(hex, 16);
+            sb.Append(char.ConvertFromUtf32(cp));
         }
         return sb.ToString();
     }

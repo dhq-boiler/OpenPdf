@@ -116,6 +116,8 @@ public sealed class TextExtractor
             ushort code = (ushort)((bytes[i] << 8) | bytes[i + 1]);
             if (cmap.TryGetValue(code, out var str))
                 sb.Append(str);
+            else if (code > 0)
+                sb.Append(char.ConvertFromUtf32(code));
         }
         return sb.ToString();
     }
