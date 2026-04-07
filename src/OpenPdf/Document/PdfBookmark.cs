@@ -154,3 +154,122 @@ public sealed class PdfOutlineBuilder
         return count;
     }
 }
+
+public static class PdfOutlineReader
+{
+    /// <summary>
+    /// Reads the outline/bookmark tree from an existing PDF.
+    /// Returns an empty list if the PDF has no outlines.
+    /// </summary>
+    public static List<PdfBookmark> Read(IPdfReader reader)
+    {
+        var result = new List<PdfBookmark>();
+        try
+        {
+            var catalog = reader.GetCatalog();
+            if (catalog == null) return result;
+
+            var outlinesRef = catalog["Outlines"];
+            if (outlinesRef == null) return result;
+
+            var outlinesDict = reader.ResolveReference(outlinesRef) as PdfDictionary;
+            if (outlinesDict == null) return result;
+
+            var firstRef = outlinesDict["First"];
+            if (firstRef == null) return result;
+
+            var allPages = reader.GetAllPages();
+            ReadLevel(reader, firstRef, result, allPages);
+        }
+        catch
+        {
+            // Silently ignore errors in outline parsing.
+        }
+
+        return result;
+    }
+
+    private static void ReadLevel(IPdfReader reader, PdfObject firstRef, List<PdfBookmark> items, List<PdfPage> allPages)
+    {
+        var currentObj = firstRef;
+        int safetyLimit = 10000;
+
+        while (currentObj != null && safetyLimit-- > 0)
+        {
+            var dict = reader.ResolveReference(currentObj) as PdfDictionary;
+            if (dict == null) break;
+
+            var bookmark = new PdfBookmark();
+
+            var titleObj = reader.ResolveReference(dict["Title"]) as PdfString;
+            if (titleObj != null)
+                bookmark.Title = DecodeTitle(titleObj);
+
+            bookmark.PageIndex = ResolveDestination(reader, dict, allPages);
+            items.Add(bookmark);
+
+            var childFirst = dict["First"];
+            if (childFirst != null)
+                ReadLevel(reader, childFirst, bookmark.Children, allPages);
+
+            currentObj = dict["Next"];
+        }
+    }
+
+    private static string DecodeTitle(PdfString pdfStr)
+    {
+        var bytes = pdfStr.Value;
+        if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+            return System.Text.Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
+
+        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+            return System.Text.Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
+
+        return pdfStr.GetText();
+    }
+
+    private static int ResolveDestination(IPdfReader reader, PdfDictionary dict, List<PdfPage> allPages)
+    {
+        var dest = reader.ResolveReference(dict["Dest"]);
+        if (dest is PdfArray destArray && destArray.Count > 0)
+        {
+            int idx = ResolvePageIndex(reader, destArray[0], allPages);
+            if (idx >= 0) return idx;
+        }
+
+        var action = reader.ResolveReference(dict["A"]) as PdfDictionary;
+        if (action != null)
+        {
+            var actionDest = reader.ResolveReference(action["D"]);
+            if (actionDest is PdfArray actionArray && actionArray.Count > 0)
+            {
+                int idx = ResolvePageIndex(reader, actionArray[0], allPages);
+                if (idx >= 0) return idx;
+            }
+        }
+
+        return 0;
+    }
+
+    private static int ResolvePageIndex(IPdfReader reader, PdfObject pageRef, List<PdfPage> allPages)
+    {
+        if (pageRef is PdfIndirectReference indRef)
+        {
+            var pageDict = reader.GetObject(indRef.ObjectNumber) as PdfDictionary;
+            if (pageDict != null)
+            {
+                for (int i = 0; i < allPages.Count; i++)
+                {
+                    if (ReferenceEquals(allPages[i].Dictionary, pageDict))
+                        return i;
+                }
+            }
+        }
+        else if (pageRef is PdfInteger intVal)
+        {
+            return (int)intVal.Value;
+        }
+
+        return 0;
+    }
+}
