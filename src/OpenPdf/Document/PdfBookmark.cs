@@ -230,25 +230,141 @@ public static class PdfOutlineReader
 
     private static int ResolveDestination(IPdfReader reader, PdfDictionary dict, List<PdfPage> allPages)
     {
-        var dest = reader.ResolveReference(dict["Dest"]);
-        if (dest is PdfArray destArray && destArray.Count > 0)
+        // Try direct Dest entry
+        var destObj = dict["Dest"];
+        if (destObj != null)
         {
-            int idx = ResolvePageIndex(reader, destArray[0], allPages);
+            int idx = ResolveDestValue(reader, destObj, allPages);
             if (idx >= 0) return idx;
         }
 
+        // Try Action dictionary (GoTo action)
         var action = reader.ResolveReference(dict["A"]) as PdfDictionary;
         if (action != null)
         {
-            var actionDest = reader.ResolveReference(action["D"]);
-            if (actionDest is PdfArray actionArray && actionArray.Count > 0)
+            var actionType = action.GetName("S");
+            if (actionType == null || actionType == "GoTo")
             {
-                int idx = ResolvePageIndex(reader, actionArray[0], allPages);
-                if (idx >= 0) return idx;
+                var actionDest = action["D"];
+                if (actionDest != null)
+                {
+                    int idx = ResolveDestValue(reader, actionDest, allPages);
+                    if (idx >= 0) return idx;
+                }
             }
         }
 
         return 0;
+    }
+
+    private static int ResolveDestValue(IPdfReader reader, PdfObject destObj, List<PdfPage> allPages)
+    {
+        destObj = reader.ResolveReference(destObj)!;
+        if (destObj == null) return -1;
+
+        // Direct array destination: [pageRef /XYZ left top zoom]
+        if (destObj is PdfArray destArray && destArray.Count > 0)
+            return ResolvePageIndex(reader, destArray[0], allPages);
+
+        // Named destination (PdfString or PdfName) — look up in Names/Dests tree
+        string? destName = null;
+        if (destObj is PdfString pdfStr)
+            destName = DecodeTitle(pdfStr);
+        else if (destObj is PdfName pdfName)
+            destName = pdfName.Value;
+
+        if (destName != null)
+        {
+            var resolved = LookupNamedDestination(reader, destName);
+            if (resolved is PdfArray namedArray && namedArray.Count > 0)
+                return ResolvePageIndex(reader, namedArray[0], allPages);
+            if (resolved is PdfDictionary namedDict)
+            {
+                var d = reader.ResolveReference(namedDict["D"]) as PdfArray;
+                if (d != null && d.Count > 0)
+                    return ResolvePageIndex(reader, d[0], allPages);
+            }
+        }
+
+        return -1;
+    }
+
+    private static PdfObject? LookupNamedDestination(IPdfReader reader, string name)
+    {
+        var catalog = reader.GetCatalog();
+        if (catalog == null) return null;
+
+        // Try Catalog → Names → Dests (name tree, PDF 1.2+)
+        var namesDict = reader.ResolveReference(catalog["Names"]) as PdfDictionary;
+        if (namesDict != null)
+        {
+            var destsTree = reader.ResolveReference(namesDict["Dests"]);
+            if (destsTree is PdfDictionary destsNode)
+            {
+                var result = SearchNameTree(reader, destsNode, name);
+                if (result != null) return result;
+            }
+        }
+
+        // Try Catalog → Dests (old-style dictionary, PDF 1.1)
+        var destsDict = reader.ResolveReference(catalog["Dests"]) as PdfDictionary;
+        if (destsDict != null)
+        {
+            var result = reader.ResolveReference(destsDict[name]);
+            if (result != null) return result;
+        }
+
+        return null;
+    }
+
+    private static PdfObject? SearchNameTree(IPdfReader reader, PdfDictionary node, string name)
+    {
+        // Check Names array (leaf node)
+        var names = reader.ResolveReference(node["Names"]) as PdfArray;
+        if (names != null)
+        {
+            for (int i = 0; i + 1 < names.Count; i += 2)
+            {
+                string? key = null;
+                if (names[i] is PdfString keyStr)
+                    key = DecodeTitle(keyStr);
+                else if (names[i] is PdfName keyName)
+                    key = keyName.Value;
+
+                if (key == name)
+                    return reader.ResolveReference(names[i + 1]);
+            }
+        }
+
+        // Check Kids array (intermediate node)
+        var kids = reader.ResolveReference(node["Kids"]) as PdfArray;
+        if (kids != null)
+        {
+            foreach (var kid in kids.Items)
+            {
+                var kidNode = reader.ResolveReference(kid) as PdfDictionary;
+                if (kidNode == null) continue;
+
+                // Check Limits to skip irrelevant subtrees
+                var limits = reader.ResolveReference(kidNode["Limits"]) as PdfArray;
+                if (limits != null && limits.Count >= 2)
+                {
+                    string? lower = (limits[0] as PdfString)?.GetText();
+                    string? upper = (limits[1] as PdfString)?.GetText();
+                    if (lower != null && upper != null)
+                    {
+                        if (string.Compare(name, lower, StringComparison.Ordinal) < 0 ||
+                            string.Compare(name, upper, StringComparison.Ordinal) > 0)
+                            continue;
+                    }
+                }
+
+                var result = SearchNameTree(reader, kidNode, name);
+                if (result != null) return result;
+            }
+        }
+
+        return null;
     }
 
     private static int ResolvePageIndex(IPdfReader reader, PdfObject pageRef, List<PdfPage> allPages)
@@ -270,6 +386,6 @@ public static class PdfOutlineReader
             return (int)intVal.Value;
         }
 
-        return 0;
+        return -1;
     }
 }
