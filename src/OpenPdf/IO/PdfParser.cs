@@ -179,8 +179,53 @@ public sealed class PdfParser
         }
         else
         {
-            // If Length is 0 or missing, try to find endstream
+            // Length is 0, missing, or an unresolved indirect reference.
+            // Scan forward to find "endstream" and use the byte distance as length.
+            long startPos = baseStream.Position;
+            byte[] marker = "endstream"u8.ToArray();
             data = Array.Empty<byte>();
+            int matchIdx = 0;
+            while (true)
+            {
+                int ch = baseStream.ReadByte();
+                if (ch < 0) break; // EOF
+                if (ch == marker[matchIdx])
+                {
+                    matchIdx++;
+                    if (matchIdx == marker.Length)
+                    {
+                        // Found "endstream". Data ends just before the marker,
+                        // stripping optional trailing CR/LF before "endstream".
+                        long endPos = baseStream.Position - marker.Length;
+                        while (endPos > startPos)
+                        {
+                            byte prev = 0;
+                            baseStream.Position = endPos - 1;
+                            prev = (byte)baseStream.ReadByte();
+                            if (prev == '\n' || prev == '\r')
+                                endPos--;
+                            else
+                                break;
+                        }
+                        long dataLen = endPos - startPos;
+                        if (dataLen > 0 && dataLen <= PdfLimits.MaxStreamLength)
+                        {
+                            data = new byte[dataLen];
+                            baseStream.Position = startPos;
+                            baseStream.Read(data, 0, (int)dataLen);
+                        }
+                        // Position the stream right after "endstream"
+                        baseStream.Position = startPos + (baseStream.Position - startPos);
+                        break;
+                    }
+                }
+                else
+                {
+                    matchIdx = (ch == marker[0]) ? 1 : 0;
+                }
+            }
+            // Reset position to end of data for endstream token consumption below
+            baseStream.Position = startPos + data.Length;
         }
 
         // Skip to after "endstream"
