@@ -54,12 +54,15 @@ public sealed class PdfReader : IPdfReader
         PdfObject? obj;
         if (entry.Type == 2)
         {
-            // Object is in an object stream
+            // Object is in an object stream (stream itself is decrypted, so no string decryption needed)
             obj = GetObjectFromStream(entry.ObjectStreamNumber, objectNumber);
         }
         else
         {
             obj = _parser.ParseObjectAt(entry.Offset);
+            // Decrypt strings in the parsed object
+            if (_encryption != null && obj != null)
+                DecryptStringsInObject(obj, objectNumber, entry.GenerationNumber);
         }
 
         if (obj != null)
@@ -69,12 +72,23 @@ public sealed class PdfReader : IPdfReader
 
     private PdfObject? GetObjectFromStream(int streamObjNumber, int targetObjNumber)
     {
+        // Check if target is already cached (another stream parse may have cached it)
+        if (_objectCache.TryGetValue(targetObjNumber, out var alreadyCached))
+            return alreadyCached;
+
         // Get the object stream itself (must be type 1)
         var streamEntry = _xrefTable.GetEntry(streamObjNumber);
         if (streamEntry == null || !streamEntry.InUse) return null;
 
         var streamObj = _parser.ParseObjectAt(streamEntry.Offset) as PdfStream;
         if (streamObj == null) return null;
+
+        // Decrypt the object stream data before parsing objects from it
+        if (_encryption != null)
+        {
+            streamObj.Data = _encryption.DecryptObject(
+                streamObj.Data, streamObj.ObjectNumber, streamObj.GenerationNumber);
+        }
 
         // Parse all objects in the stream and cache them
         var objects = IO.ObjectStreamParser.Parse(streamObj);
@@ -226,6 +240,46 @@ public sealed class PdfReader : IPdfReader
         {
             // Cannot decrypt without password, disable encryption handling
             _encryption = null;
+        }
+    }
+
+    private void DecryptStringsInObject(PdfObject obj, int objectNumber, int generationNumber)
+    {
+        if (obj is PdfDictionary dict)
+        {
+            foreach (var key in dict.Entries.Keys.ToList())
+            {
+                var value = dict[key];
+                if (value is PdfString pdfStr)
+                {
+                    var decrypted = _encryption!.DecryptObject(pdfStr.Value, objectNumber, generationNumber);
+                    dict[key] = new PdfString(decrypted, pdfStr.IsHex);
+                }
+                else if (value is PdfDictionary or PdfArray)
+                {
+                    DecryptStringsInObject(value, objectNumber, generationNumber);
+                }
+            }
+        }
+        else if (obj is PdfArray arr)
+        {
+            for (int i = 0; i < arr.Count; i++)
+            {
+                var item = arr[i];
+                if (item is PdfString pdfStr)
+                {
+                    var decrypted = _encryption!.DecryptObject(pdfStr.Value, objectNumber, generationNumber);
+                    arr[i] = new PdfString(decrypted, pdfStr.IsHex);
+                }
+                else if (item is PdfDictionary or PdfArray)
+                {
+                    DecryptStringsInObject(item, objectNumber, generationNumber);
+                }
+            }
+        }
+        else if (obj is PdfStream stream)
+        {
+            DecryptStringsInObject(stream.Dictionary, objectNumber, generationNumber);
         }
     }
 
