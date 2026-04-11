@@ -67,6 +67,22 @@ public static class PdfAnnotation
         });
         return annot;
     }
+
+    public static PdfDictionary CreateFreeText(double x, double y, double width, double height, string contents, double fontSize = 12)
+    {
+        var annot = new PdfDictionary();
+        annot["Type"] = new PdfName("Annot");
+        annot["Subtype"] = new PdfName("FreeText");
+        annot["Rect"] = new PdfArray(new PdfObject[]
+        {
+            new PdfReal(x), new PdfReal(y),
+            new PdfReal(x + width), new PdfReal(y + height)
+        });
+        annot["Contents"] = new PdfString(contents);
+        annot["DA"] = new PdfString($"/Helv {fontSize:0.##} Tf 0 0 0 rg");
+        annot["F"] = new PdfInteger(4);
+        return annot;
+    }
 }
 
 public static class PdfPageAnnotationExtensions
