@@ -83,6 +83,52 @@ public static class PdfAnnotation
         annot["F"] = new PdfInteger(4);
         return annot;
     }
+
+    public static PdfDictionary CreateInk(
+        double x, double y, double width, double height,
+        List<List<(float X, float Y)>> strokes,
+        double strokeWidth = 2,
+        double r = 0, double g = 0, double b = 1)
+    {
+        var annot = new PdfDictionary();
+        annot["Type"] = new PdfName("Annot");
+        annot["Subtype"] = new PdfName("Ink");
+        annot["Rect"] = new PdfArray(new PdfObject[]
+        {
+            new PdfReal(x), new PdfReal(y),
+            new PdfReal(x + width), new PdfReal(y + height)
+        });
+        annot["C"] = new PdfArray(new PdfObject[]
+        {
+            new PdfReal(r), new PdfReal(g), new PdfReal(b)
+        });
+        annot["BS"] = CreateBorderStyle(strokeWidth);
+
+        // InkList: array of arrays of coordinate pairs
+        var inkList = new PdfArray();
+        foreach (var stroke in strokes)
+        {
+            var strokeArray = new PdfArray();
+            foreach (var pt in stroke)
+            {
+                strokeArray.Add(new PdfReal(pt.X));
+                strokeArray.Add(new PdfReal(pt.Y));
+            }
+            inkList.Add(strokeArray);
+        }
+        annot["InkList"] = inkList;
+
+        return annot;
+    }
+
+    private static PdfDictionary CreateBorderStyle(double width)
+    {
+        var bs = new PdfDictionary();
+        bs["Type"] = new PdfName("Border");
+        bs["W"] = new PdfReal(width);
+        bs["S"] = new PdfName("S"); // Solid
+        return bs;
+    }
 }
 
 public static class PdfPageAnnotationExtensions
