@@ -47,10 +47,14 @@ public sealed class PdfWriter : IPdfWriter
         return null;
     }
 
-    public void EnableEncryption(string userPassword, string ownerPassword, int permissions = -4, bool useAes = true)
+    public void EnableEncryption(string userPassword, string ownerPassword, int permissions = -4, bool useAes = true,
+        bool useAes256 = false)
     {
         var (encDict, fileId, _) = PdfEncryption.CreateEncryption(
-            userPassword, ownerPassword, permissions, keyLength: 128, useAes: useAes);
+            userPassword, ownerPassword, permissions,
+            keyLength: useAes256 ? 256 : 128,
+            useAes: useAes,
+            useAes256: useAes256);
         _encryptDict = encDict;
         _fileId = fileId;
 
