@@ -15,6 +15,9 @@ public sealed class TolerantPdfReader : IPdfReader
     public string Version { get; }
     public PdfDictionary Trailer => _xrefTable.Trailer!;
     public int PageCount { get; private set; }
+    public bool IsEncrypted => false;
+    public bool RequiresPassword => false;
+    public bool IsAuthenticated => true;
     public IReadOnlyList<string> RepairLog => _repairLog;
 
     private TolerantPdfReader(Stream stream, bool ownsStream)
@@ -65,6 +68,8 @@ public sealed class TolerantPdfReader : IPdfReader
     }
 
     public static TolerantPdfReader Open(Stream stream) => new(stream, ownsStream: false);
+
+    public bool Authenticate(string password) => true;
 
     public PdfObject? GetObject(int objectNumber)
     {

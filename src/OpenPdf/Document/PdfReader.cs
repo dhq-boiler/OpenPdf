@@ -12,11 +12,14 @@ public sealed class PdfReader : IPdfReader
     private readonly PdfParser _parser;
     private readonly Dictionary<int, PdfObject> _objectCache = new();
     private PdfEncryption? _encryption;
+    private bool _authenticated;
 
     public string Version { get; }
     public PdfDictionary Trailer => _xrefTable.Trailer!;
     public int PageCount { get; private set; }
     public bool IsEncrypted => _encryption != null;
+    public bool RequiresPassword => IsEncrypted && !_authenticated;
+    public bool IsAuthenticated => !IsEncrypted || _authenticated;
 
     private PdfReader(Stream stream, bool ownsStream)
     {
@@ -28,7 +31,8 @@ public sealed class PdfReader : IPdfReader
         var xrefReader = new XrefReader(stream);
         _xrefTable = xrefReader.Read();
         InitEncryption();
-        PageCount = CountPages();
+        if (!RequiresPassword)
+            PageCount = CountPages();
     }
 
     public static PdfReader Open(string path)
@@ -61,7 +65,7 @@ public sealed class PdfReader : IPdfReader
         {
             obj = _parser.ParseObjectAt(entry.Offset);
             // Decrypt strings in the parsed object
-            if (_encryption != null && obj != null)
+            if (_encryption != null && _authenticated && obj != null)
                 DecryptStringsInObject(obj, objectNumber, entry.GenerationNumber);
         }
 
@@ -84,7 +88,7 @@ public sealed class PdfReader : IPdfReader
         if (streamObj == null) return null;
 
         // Decrypt the object stream data before parsing objects from it
-        if (_encryption != null)
+        if (_encryption != null && _authenticated)
         {
             streamObj.Data = _encryption.DecryptObject(
                 streamObj.Data, streamObj.ObjectNumber, streamObj.GenerationNumber);
@@ -107,12 +111,32 @@ public sealed class PdfReader : IPdfReader
 
     public byte[] DecodeStream(PdfStream stream)
     {
-        if (_encryption != null && stream.ObjectNumber > 0)
+        if (_encryption != null && _authenticated && stream.ObjectNumber > 0)
         {
             var decrypted = _encryption.DecryptObject(stream.Data, stream.ObjectNumber, stream.GenerationNumber);
             return Filters.StreamDecoder.DecodeStream(stream, decrypted);
         }
         return Filters.StreamDecoder.DecodeStream(stream);
+    }
+
+    public bool Authenticate(string password)
+    {
+        if (_encryption == null)
+        {
+            _authenticated = true;
+            return true;
+        }
+
+        if (_authenticated)
+            return true;
+
+        if (!_encryption.Authenticate(password))
+            return false;
+
+        _authenticated = true;
+        _objectCache.Clear();
+        PageCount = CountPages();
+        return true;
     }
 
     public PdfDictionary? GetCatalog()
@@ -236,11 +260,7 @@ public sealed class PdfReader : IPdfReader
         _encryption = new PdfEncryption(encryptDict, fileId);
 
         // Try empty password authentication (most common for view-only PDFs)
-        if (!_encryption.AuthenticateEmpty())
-        {
-            // Cannot decrypt without password, disable encryption handling
-            _encryption = null;
-        }
+        _authenticated = _encryption.AuthenticateEmpty();
     }
 
     private void DecryptStringsInObject(PdfObject obj, int objectNumber, int generationNumber)

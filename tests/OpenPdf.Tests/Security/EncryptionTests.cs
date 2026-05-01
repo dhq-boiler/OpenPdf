@@ -76,4 +76,59 @@ public class EncryptionTests
         var decrypted = enc.DecryptObject(encrypted, 5, 0);
         Assert.Equal(original, decrypted);
     }
+
+    [Fact]
+    public void CreateEncryption_Aes128_HasCorrectFields()
+    {
+        var (encDict, fileId, _) = PdfEncryption.CreateEncryption("user", "owner", -4, 128, useAes: true);
+        Assert.Equal(4, (int)encDict.GetInt("V"));
+        Assert.Equal(4, (int)encDict.GetInt("R"));
+        Assert.Equal(128, (int)encDict.GetInt("Length"));
+        Assert.Equal(16, fileId.Length);
+
+        var cf = encDict.Get<OpenPdf.Objects.PdfDictionary>("CF");
+        Assert.NotNull(cf);
+        var stdCf = cf!.Get<OpenPdf.Objects.PdfDictionary>("StdCF");
+        Assert.NotNull(stdCf);
+        Assert.Equal("AESV2", stdCf!.GetName("CFM"));
+    }
+
+    [Fact]
+    public void Aes128_EncryptDecrypt_RoundTrip()
+    {
+        var (encDict, fileId, _) = PdfEncryption.CreateEncryption("user", "owner", -4, 128, useAes: true);
+        var idArray = new OpenPdf.Objects.PdfArray();
+        idArray.Add(new OpenPdf.Objects.PdfString(fileId, isHex: true));
+
+        var enc = new PdfEncryption(encDict, idArray);
+        Assert.True(enc.Authenticate("user"));
+
+        var original = System.Text.Encoding.ASCII.GetBytes("Confidential PDF stream content");
+        var encrypted = enc.EncryptObject(original, 7, 0);
+        Assert.NotEqual(original, encrypted);
+        Assert.True(encrypted.Length >= 16 + original.Length);
+
+        var decrypted = enc.DecryptObject(encrypted, 7, 0);
+        Assert.Equal(original, decrypted);
+    }
+
+    [Fact]
+    public void PdfWriter_WithEncryption_ProducesEncryptDictAndId()
+    {
+        using var ms = new System.IO.MemoryStream();
+        var writer = new OpenPdf.IO.PdfWriter(ms);
+        writer.EnableEncryption("user", "owner", -4, useAes: true);
+
+        var catalog = new OpenPdf.Objects.PdfDictionary();
+        catalog["Type"] = new OpenPdf.Objects.PdfName("Catalog");
+        catalog["Title"] = new OpenPdf.Objects.PdfString("Encrypted document");
+        var catRef = writer.AddObject(catalog);
+        writer.Write(catRef);
+
+        var bytes = ms.ToArray();
+        var text = System.Text.Encoding.ASCII.GetString(bytes);
+        Assert.Contains("/Encrypt", text);
+        Assert.Contains("/ID", text);
+        Assert.DoesNotContain("Encrypted document", text);
+    }
 }
