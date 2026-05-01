@@ -7,7 +7,7 @@
 
     <!-- NuGet Package Metadata -->
     <PackageId>OpenPdf</PackageId>
-    <Version>1.4.0</Version>
+    <Version>1.5.0</Version>
     <Authors>dhq_boiler</Authors>
     <Description>A pure C# PDF library for reading, writing, and editing PDF files. Supports Japanese (CJK) text, font subsetting, annotations, bookmarks, form fields, PDF/A-1b, encryption, barcode/QR code generation, and more. No external dependencies.</Description>
     <PackageTags>pdf;pdf-generation;pdf-reader;pdf-writer;csharp;dotnet;cjk;japanese;pdfa;barcode;qrcode</PackageTags>
