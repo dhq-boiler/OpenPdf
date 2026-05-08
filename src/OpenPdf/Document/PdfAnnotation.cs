@@ -84,6 +84,48 @@ public static class PdfAnnotation
         return annot;
     }
 
+    public static PdfDictionary CreateRedact(
+        double x, double y, double width, double height,
+        double fillR = 0, double fillG = 0, double fillB = 0,
+        double markR = 1, double markG = 0, double markB = 0,
+        string overlayText = "")
+    {
+        var annot = new PdfDictionary();
+        annot["Type"] = new PdfName("Annot");
+        annot["Subtype"] = new PdfName("Redact");
+        annot["Rect"] = new PdfArray(new PdfObject[]
+        {
+            new PdfReal(x), new PdfReal(y),
+            new PdfReal(x + width), new PdfReal(y + height)
+        });
+        // Outline color shown before applying (PDF 32000 §12.5.6.10): /C
+        annot["C"] = new PdfArray(new PdfObject[]
+        {
+            new PdfReal(markR), new PdfReal(markG), new PdfReal(markB)
+        });
+        // Interior color used after the redaction is applied: /IC
+        annot["IC"] = new PdfArray(new PdfObject[]
+        {
+            new PdfReal(fillR), new PdfReal(fillG), new PdfReal(fillB)
+        });
+        // QuadPoints describes the quadrilateral to be redacted.
+        // Order: x1 y1 x2 y2 x3 y3 x4 y4 — top-left, top-right, bottom-left, bottom-right.
+        annot["QuadPoints"] = new PdfArray(new PdfObject[]
+        {
+            new PdfReal(x), new PdfReal(y + height),
+            new PdfReal(x + width), new PdfReal(y + height),
+            new PdfReal(x), new PdfReal(y),
+            new PdfReal(x + width), new PdfReal(y)
+        });
+        if (!string.IsNullOrEmpty(overlayText))
+        {
+            annot["OverlayText"] = new PdfString(overlayText);
+            annot["DA"] = new PdfString("/Helv 0 Tf 1 1 1 rg");
+        }
+        annot["F"] = new PdfInteger(4); // Print flag
+        return annot;
+    }
+
     public static PdfDictionary CreateInk(
         double x, double y, double width, double height,
         List<List<(float X, float Y)>> strokes,
