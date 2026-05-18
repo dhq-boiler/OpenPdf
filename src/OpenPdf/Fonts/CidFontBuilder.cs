@@ -42,7 +42,18 @@ public sealed class CidFontBuilder
 
         // Embed font file (subset)
         var subsetter = new TrueTypeSubsetter(_ttf);
-        var fontData = subsetter.Subset(_usedCodePoints);
+        // Subset font name per PDF spec 9.6.4: "XXXXXX+OriginalName" where
+        // XXXXXX is six uppercase letters derived from the subset contents.
+        // Without this prefix Acrobat may see the embedded font as a same-name
+        // duplicate of the system Meiryo and fall back to the system copy,
+        // ignoring our CIDToGIDMap and rendering the wrong glyphs.
+        string subsetTag = BuildSubsetTag(_usedCodePoints);
+        string subsetFontName = $"{subsetTag}+{_ttf.PostScriptName}";
+
+        // Pass the subset name into the subsetter so the embedded font's `name`
+        // table matches the PDF's BaseFont. Mismatch makes Acrobat refuse to
+        // extract the font program.
+        var (fontData, oldToNewGid) = subsetter.SubsetWithMap(_usedCodePoints, subsetFontName);
         var flate = new FlateDecodeFilter();
         var compressedData = flate.Encode(fontData);
 
@@ -56,7 +67,7 @@ public sealed class CidFontBuilder
         double scale = 1000.0 / _ttf.UnitsPerEm;
         var fontDescriptor = new PdfDictionary();
         fontDescriptor["Type"] = new PdfName("FontDescriptor");
-        fontDescriptor["FontName"] = new PdfName(_ttf.PostScriptName);
+        fontDescriptor["FontName"] = new PdfName(subsetFontName);
         fontDescriptor["Flags"] = new PdfInteger(4); // Symbolic (covers CJK)
         fontDescriptor["FontBBox"] = new PdfArray(new PdfObject[]
         {
@@ -77,7 +88,7 @@ public sealed class CidFontBuilder
         var cidFont = new PdfDictionary();
         cidFont["Type"] = PdfName.Font;
         cidFont["Subtype"] = new PdfName("CIDFontType2");
-        cidFont["BaseFont"] = new PdfName(_ttf.PostScriptName);
+        cidFont["BaseFont"] = new PdfName(subsetFontName);
         var cidSystemInfo = new PdfDictionary();
         cidSystemInfo["Registry"] = new PdfString("Adobe");
         cidSystemInfo["Ordering"] = new PdfString("Identity");
@@ -87,14 +98,39 @@ public sealed class CidFontBuilder
         cidFont["DW"] = new PdfInteger(1000);
         if (wArray.Count > 0)
             cidFont["W"] = wArray;
-        cidFont["CIDToGIDMap"] = new PdfName("Identity");
+
+        // CIDToGIDMap: ContentStream encodes characters as original GIDs (= CIDs),
+        // but the subsetted font renumbers glyphs starting from 0. This stream maps
+        // CID (original GID) → new GID inside the subsetted font, as big-endian uint16
+        // values indexed by CID. Without it (or with /Identity), viewers look up the
+        // wrong glyph in the subset and render tofu.
+        if (oldToNewGid.Count > 0)
+        {
+            ushort maxOldGid = 0;
+            foreach (var k in oldToNewGid.Keys)
+                if (k > maxOldGid) maxOldGid = k;
+            var mapBytes = new byte[(maxOldGid + 1) * 2];
+            foreach (var (oldGid, newGid) in oldToNewGid)
+            {
+                mapBytes[oldGid * 2] = (byte)(newGid >> 8);
+                mapBytes[oldGid * 2 + 1] = (byte)(newGid & 0xFF);
+            }
+            var cidToGidDict = new PdfDictionary();
+            cidToGidDict["Filter"] = PdfName.FlateDecode;
+            var cidToGidStream = new PdfStream(cidToGidDict, flate.Encode(mapBytes));
+            cidFont["CIDToGIDMap"] = writer.AddObject(cidToGidStream);
+        }
+        else
+        {
+            cidFont["CIDToGIDMap"] = new PdfName("Identity");
+        }
         var cidFontRef = writer.AddObject(cidFont);
 
         // Type0 font dictionary
         var type0Font = new PdfDictionary();
         type0Font["Type"] = PdfName.Font;
         type0Font["Subtype"] = new PdfName("Type0");
-        type0Font["BaseFont"] = new PdfName(_ttf.PostScriptName);
+        type0Font["BaseFont"] = new PdfName(subsetFontName);
         type0Font["Encoding"] = new PdfName("Identity-H");
         type0Font["DescendantFonts"] = new PdfArray(new PdfObject[] { cidFontRef });
         type0Font["ToUnicode"] = toUnicodeRef;
@@ -194,6 +230,30 @@ public sealed class CidFontBuilder
         foreach (var b in bytes)
             sb.Append(b.ToString("X2"));
         return sb.ToString();
+    }
+
+    private static string BuildSubsetTag(IEnumerable<int> codePoints)
+    {
+        // 6-letter uppercase tag. PDF spec only requires "unique within the
+        // document", so we mix in a per-build seed to also be unique *across*
+        // documents — this sidesteps viewer font caches that key by
+        // PostScriptName and may reuse a corrupted earlier subset.
+        unchecked
+        {
+            ulong h = 1469598103934665603UL ^ (ulong)Environment.TickCount64 ^ (ulong)Guid.NewGuid().GetHashCode();
+            foreach (var cp in codePoints)
+            {
+                h ^= (uint)cp;
+                h *= 1099511628211UL;
+            }
+            var buf = new char[6];
+            for (int i = 0; i < 6; i++)
+            {
+                buf[i] = (char)('A' + (int)(h % 26));
+                h /= 26;
+            }
+            return new string(buf);
+        }
     }
 
     public double MeasureString(string text, double fontSize)
