@@ -26,9 +26,17 @@ public sealed class TrueTypeSubsetter
 
     public byte[] Subset(IEnumerable<int> codePoints)
     {
+        return SubsetWithMap(codePoints).FontData;
+    }
+
+    public (byte[] FontData, Dictionary<ushort, ushort> OldToNewGid) SubsetWithMap(IEnumerable<int> codePoints, string? overrideFontName = null)
+    {
+        // Materialize codePoints since we iterate it twice (cmap build + glyph collection)
+        var cpList = codePoints.ToList();
+
         // Collect all needed glyph IDs (always include glyph 0 = .notdef)
         var glyphIds = new SortedSet<ushort> { 0 };
-        foreach (var cp in codePoints)
+        foreach (var cp in cpList)
         {
             var gid = _font.GetGlyphId(cp);
             if (gid != 0)
@@ -47,19 +55,21 @@ public sealed class TrueTypeSubsetter
         // Build subset tables
         var tables = new Dictionary<string, byte[]>();
         tables["head"] = BuildHeadTable();
-        tables["hhea"] = CopyTable("hhea");
+        tables["hhea"] = BuildHheaTable(glyphList.Count);
         tables["maxp"] = BuildMaxpTable(glyphList.Count);
-        tables["OS/2"] = CopyTable("OS/2");
-        tables["name"] = CopyTable("name");
-        tables["cmap"] = BuildCmapTable(codePoints, oldToNew);
+        tables["OS/2"] = BuildOS2Table(cpList);
+        tables["name"] = overrideFontName != null
+            ? BuildNameTable(overrideFontName)
+            : CopyTable("name");
+        tables["cmap"] = BuildCmapTable(cpList, oldToNew);
         tables["post"] = BuildPostTable();
 
-        var (locaTable, glyfTable) = BuildLocaGlyfTables(glyphList);
+        var (locaTable, glyfTable) = BuildLocaGlyfTables(glyphList, oldToNew);
         tables["loca"] = locaTable;
         tables["glyf"] = glyfTable;
         tables["hmtx"] = BuildHmtxTable(glyphList);
 
-        return AssembleTtf(tables);
+        return (AssembleTtf(tables), oldToNew);
     }
 
     private void ParseTableDirectory()
@@ -158,9 +168,14 @@ public sealed class TrueTypeSubsetter
     private byte[] BuildHeadTable()
     {
         var head = CopyTable("head");
-        // Set indexToLocFormat to long (1)
+        // Set indexToLocFormat to long (1) at offset 50-51
         head[50] = 0;
         head[51] = 1;
+        // Zero out checkSumAdjustment at offset 8-11. The correct value depends
+        // on the entire assembled font, so it's computed in AssembleTtf after
+        // every table is laid out. The table checksum stored in the directory
+        // is also computed with checkSumAdjustment=0, per the OpenType spec.
+        head[8] = 0; head[9] = 0; head[10] = 0; head[11] = 0;
         return head;
     }
 
@@ -170,6 +185,17 @@ public sealed class TrueTypeSubsetter
         maxp[4] = (byte)(numGlyphs >> 8);
         maxp[5] = (byte)(numGlyphs & 0xFF);
         return maxp;
+    }
+
+    private byte[] BuildHheaTable(int numGlyphs)
+    {
+        // hhea is 36 bytes; numberOfHMetrics is the final uint16 at offset 34.
+        // The new hmtx table holds exactly numGlyphs longHorMetric entries (no
+        // tail of shared-width glyphs), so numberOfHMetrics must match.
+        var hhea = CopyTable("hhea");
+        hhea[34] = (byte)(numGlyphs >> 8);
+        hhea[35] = (byte)(numGlyphs & 0xFF);
+        return hhea;
     }
 
     private byte[] BuildCmapTable(IEnumerable<int> codePoints, Dictionary<ushort, ushort> oldToNew)
@@ -339,7 +365,7 @@ public sealed class TrueTypeSubsetter
         }
     }
 
-    private (byte[] Loca, byte[] Glyf) BuildLocaGlyfTables(List<ushort> glyphList)
+    private (byte[] Loca, byte[] Glyf) BuildLocaGlyfTables(List<ushort> glyphList, Dictionary<ushort, ushort> oldToNew)
     {
         if (!_tables.TryGetValue("glyf", out var glyfTable)) return (Array.Empty<byte>(), Array.Empty<byte>());
         if (!_tables.TryGetValue("loca", out var locaTable)) return (Array.Empty<byte>(), Array.Empty<byte>());
@@ -353,7 +379,10 @@ public sealed class TrueTypeSubsetter
             var (offset, length) = GetGlyphLocation(gid, glyfTable.Offset, locaTable.Offset);
             if (length > 0)
             {
-                glyfMs.Write(_data, (int)(glyfTable.Offset + offset), (int)length);
+                var glyphBytes = new byte[length];
+                Array.Copy(_data, (int)(glyfTable.Offset + offset), glyphBytes, 0, (int)length);
+                RemapCompositeComponents(glyphBytes, oldToNew);
+                glyfMs.Write(glyphBytes, 0, glyphBytes.Length);
                 // Pad to 4-byte boundary
                 while (glyfMs.Position % 4 != 0)
                     glyfMs.WriteByte(0);
@@ -370,6 +399,41 @@ public sealed class TrueTypeSubsetter
         return (locaMs.ToArray(), glyfMs.ToArray());
     }
 
+    private static void RemapCompositeComponents(byte[] glyph, Dictionary<ushort, ushort> oldToNew)
+    {
+        if (glyph.Length < 10) return;
+        short numContours = (short)((glyph[0] << 8) | glyph[1]);
+        if (numContours >= 0) return; // simple glyph — nothing to remap
+
+        int pos = 10; // skip numContours + bbox(8 bytes)
+        const ushort ARG_1_AND_2_ARE_WORDS = 0x0001;
+        const ushort WE_HAVE_A_SCALE = 0x0008;
+        const ushort MORE_COMPONENTS = 0x0020;
+        const ushort WE_HAVE_AN_X_AND_Y_SCALE = 0x0040;
+        const ushort WE_HAVE_A_TWO_BY_TWO = 0x0080;
+
+        while (pos + 4 <= glyph.Length)
+        {
+            ushort flags = (ushort)((glyph[pos] << 8) | glyph[pos + 1]);
+            ushort componentGid = (ushort)((glyph[pos + 2] << 8) | glyph[pos + 3]);
+            if (oldToNew.TryGetValue(componentGid, out var newGid))
+            {
+                glyph[pos + 2] = (byte)(newGid >> 8);
+                glyph[pos + 3] = (byte)(newGid & 0xFF);
+            }
+            pos += 4;
+
+            // arguments
+            pos += (flags & ARG_1_AND_2_ARE_WORDS) != 0 ? 4 : 2;
+            // optional transform
+            if ((flags & WE_HAVE_A_SCALE) != 0) pos += 2;
+            else if ((flags & WE_HAVE_AN_X_AND_Y_SCALE) != 0) pos += 4;
+            else if ((flags & WE_HAVE_A_TWO_BY_TWO) != 0) pos += 8;
+
+            if ((flags & MORE_COMPONENTS) == 0) break;
+        }
+    }
+
     private byte[] BuildHmtxTable(List<ushort> glyphList)
     {
         using var ms = new MemoryStream();
@@ -379,6 +443,78 @@ public sealed class TrueTypeSubsetter
             WriteUInt16(bw, _font.GetGlyphWidth(gid));
             WriteInt16(bw, 0); // lsb (simplified)
         }
+        return ms.ToArray();
+    }
+
+    private byte[] BuildOS2Table(List<int> codePoints)
+    {
+        // Copy original OS/2, then patch usFirstCharIndex / usLastCharIndex
+        // (offsets 64/66, uint16 BE) to match the subset's actual BMP range.
+        // Some strict consumers reject the font when these point outside the
+        // glyph set, even if everything else is consistent.
+        var os2 = CopyTable("OS/2");
+        ushort first = 0xFFFF;
+        ushort last = 0;
+        foreach (var cp in codePoints)
+        {
+            if (cp <= 0xFFFF && cp >= 0x0020)
+            {
+                if (cp < first) first = (ushort)cp;
+                if (cp > last) last = (ushort)cp;
+            }
+        }
+        if (first <= last && os2.Length >= 68)
+        {
+            os2[64] = (byte)(first >> 8); os2[65] = (byte)(first & 0xFF);
+            os2[66] = (byte)(last >> 8); os2[67] = (byte)(last & 0xFF);
+        }
+        return os2;
+    }
+
+    private byte[] BuildNameTable(string fontName)
+    {
+        // Minimal name table (format 0) carrying just the four records Acrobat
+        // actually cares about, all set to the subset font name. Without this,
+        // the embedded font's PostScriptName stays "Meiryo" while the PDF's
+        // BaseFont reads "XXXXXX+Meiryo", and Acrobat refuses to extract the
+        // embedded program (showing "埋め込みフォントを抽出できません").
+        var nameBytes = Encoding.BigEndianUnicode.GetBytes(fontName);
+        var styleBytes = Encoding.BigEndianUnicode.GetBytes("Regular");
+
+        // nameId, payload bytes
+        var records = new (ushort NameId, byte[] Data)[]
+        {
+            (1, nameBytes),   // Font Family
+            (2, styleBytes),  // Font Subfamily
+            (4, nameBytes),   // Full font name
+            (6, nameBytes),   // PostScript name
+        };
+
+        int headerSize = 6;
+        int recordSize = 12;
+        int stringOffset = headerSize + records.Length * recordSize;
+
+        using var ms = new MemoryStream();
+        using var bw = new BinaryWriter(ms);
+        WriteUInt16(bw, 0);                          // format
+        WriteUInt16(bw, (ushort)records.Length);     // count
+        WriteUInt16(bw, (ushort)stringOffset);       // stringOffset
+
+        int currOffset = 0;
+        foreach (var r in records)
+        {
+            WriteUInt16(bw, 3);        // platformID = Windows
+            WriteUInt16(bw, 1);        // encodingID = Unicode BMP
+            WriteUInt16(bw, 0x0409);   // languageID = English (US)
+            WriteUInt16(bw, r.NameId);
+            WriteUInt16(bw, (ushort)r.Data.Length);
+            WriteUInt16(bw, (ushort)currOffset);
+            currOffset += r.Data.Length;
+        }
+
+        foreach (var r in records)
+            bw.Write(r.Data);
+
         return ms.ToArray();
     }
 
@@ -447,7 +583,26 @@ public sealed class TrueTypeSubsetter
             WriteUInt32(bw, length);
         }
 
-        return ms.ToArray();
+        var fontBytes = ms.ToArray();
+
+        // Compute head.checkSumAdjustment = 0xB1B0AFBA - sumOfEntireFont
+        // Spec: the file's checkSum is the sum of all uint32 in the file,
+        // computed with the checkSumAdjustment field set to zero (which it is,
+        // because BuildHeadTable writes zeros there).
+        var headEntry = entries.First(e => e.Tag == "head");
+        int headOffset = (int)headEntry.Offset;
+        uint fontChecksum = CalcChecksum(fontBytes);
+        uint adjustment = 0xB1B0AFBA - fontChecksum;
+        fontBytes[headOffset + 8] = (byte)(adjustment >> 24);
+        fontBytes[headOffset + 9] = (byte)(adjustment >> 16);
+        fontBytes[headOffset + 10] = (byte)(adjustment >> 8);
+        fontBytes[headOffset + 11] = (byte)(adjustment & 0xFF);
+
+        // Per OpenType spec: head's directory checksum is computed assuming
+        // checkSumAdjustment=0, and is NOT updated after writing the real
+        // adjustment value. Verifiers compensate by zeroing the field before
+        // checking head's checksum. So we leave the directory entry as-is.
+        return fontBytes;
     }
 
     private static uint CalcChecksum(byte[] data)
