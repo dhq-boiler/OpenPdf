@@ -31,6 +31,7 @@ public sealed class PdfEncryption
     private readonly byte[] _ownerKeySalt;
     private readonly byte[] _userValidationSalt;
     private readonly byte[] _userKeySalt;
+    private readonly bool _encryptMetadata;
 
     public PdfEncryption(PdfDictionary encryptDict, PdfArray? fileId)
     {
@@ -38,6 +39,15 @@ public sealed class PdfEncryption
         int keyBits = (int)encryptDict.GetInt("Length", 40);
         KeyLength = keyBits / 8;
         Permissions = (int)encryptDict.GetInt("P", 0);
+
+        // /EncryptMetadata defaults to true; only V>=4 may opt out by setting
+        // it false, in which case algorithm 2 step f folds 0xFFFFFFFF into
+        // the key. Treating it as always-false (the pre-fix behaviour) makes
+        // empty-password validation fail for the common V=4 R=4 case where
+        // only the owner password is set (e.g. unicode.org chart PDFs),
+        // which Adobe opens silently.
+        var em = encryptDict.Get<PdfBoolean>("EncryptMetadata");
+        _encryptMetadata = em?.Value ?? true;
 
         var oStr = encryptDict.Get<PdfString>("O");
         var uStr = encryptDict.Get<PdfString>("U");
@@ -189,9 +199,10 @@ public sealed class PdfEncryption
 
         md5.TransformBlock(_fileId, 0, _fileId.Length, null, 0);
 
-        if (Revision >= 4)
+        if (Revision >= 4 && !_encryptMetadata)
         {
-            // For revision 4, if metadata is not encrypted, hash 0xFFFFFFFF
+            // PDF 32000-1 §7.6.3.3 algorithm 2 step f: only mix in
+            // 0xFFFFFFFF when /EncryptMetadata is explicitly false.
             var noMeta = new byte[] { 0xFF, 0xFF, 0xFF, 0xFF };
             md5.TransformBlock(noMeta, 0, 4, null, 0);
         }
