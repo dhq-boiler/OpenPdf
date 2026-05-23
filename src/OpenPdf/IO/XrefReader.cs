@@ -111,7 +111,26 @@ public sealed class XrefReader
         // Parse trailer dictionary
         var parser = new PdfParser(new PdfLexer(_stream));
         var trailerDict = parser.ParseObject() as PdfDictionary;
-        table.Trailer = trailerDict;
+
+        // Trailers are merged across the /Prev chain with the most recently
+        // read (i.e. the one startxref points at) taking precedence — the
+        // older trailers only contribute the keys they were the first to
+        // introduce. Linearized PDFs lean on this: the linearization xref
+        // at the head holds /Root, while the end-of-file main xref's trailer
+        // is sometimes <</Size N>> only, so an unconditional assignment here
+        // wipes out /Root and CountPages collapses to 0.
+        if (table.Trailer == null)
+        {
+            table.Trailer = trailerDict;
+        }
+        else if (trailerDict != null)
+        {
+            foreach (var key in trailerDict.Entries.Keys)
+            {
+                if (!table.Trailer.Entries.ContainsKey(key))
+                    table.Trailer[key] = trailerDict[key];
+            }
+        }
 
         // Follow Prev link if exists
         if (trailerDict != null)
@@ -134,9 +153,22 @@ public sealed class XrefReader
 
         var dict = xrefStream.Dictionary;
 
-        // The xref stream dictionary also serves as the trailer
+        // The xref stream dictionary also serves as the trailer. Merge with
+        // any trailer already collected (see the matching logic in the
+        // traditional xref branch — earlier xref sections must not override
+        // keys the most-recent trailer already introduced).
         if (table.Trailer == null)
+        {
             table.Trailer = dict;
+        }
+        else
+        {
+            foreach (var key in dict.Entries.Keys)
+            {
+                if (!table.Trailer.Entries.ContainsKey(key))
+                    table.Trailer[key] = dict[key];
+            }
+        }
 
         // Decode the stream data
         var data = DecodeStreamData(xrefStream);
