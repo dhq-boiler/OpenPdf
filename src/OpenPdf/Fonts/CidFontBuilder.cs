@@ -110,8 +110,10 @@ public sealed class CidFontBuilder
             foreach (var k in oldToNewGid.Keys)
                 if (k > maxOldGid) maxOldGid = k;
             var mapBytes = new byte[(maxOldGid + 1) * 2];
-            foreach (var (oldGid, newGid) in oldToNewGid)
+            foreach (var kv in oldToNewGid)
             {
+                ushort oldGid = kv.Key;
+                ushort newGid = kv.Value;
                 mapBytes[oldGid * 2] = (byte)(newGid >> 8);
                 mapBytes[oldGid * 2 + 1] = (byte)(newGid & 0xFF);
             }
@@ -240,7 +242,14 @@ public sealed class CidFontBuilder
         // PostScriptName and may reuse a corrupted earlier subset.
         unchecked
         {
-            ulong h = 1469598103934665603UL ^ (ulong)Environment.TickCount64 ^ (ulong)Guid.NewGuid().GetHashCode();
+            // TickCount64 is .NET 5+; on netstandard2.0 fall back to the
+            // wraparound-prone TickCount — good enough as a salt input.
+#if NET5_0_OR_GREATER
+            ulong tick = (ulong)Environment.TickCount64;
+#else
+            ulong tick = (ulong)(uint)Environment.TickCount;
+#endif
+            ulong h = 1469598103934665603UL ^ tick ^ (ulong)Guid.NewGuid().GetHashCode();
             foreach (var cp in codePoints)
             {
                 h ^= (uint)cp;
