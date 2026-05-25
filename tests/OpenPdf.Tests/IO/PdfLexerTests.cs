@@ -66,6 +66,47 @@ public class PdfLexerTests
     }
 
     [Fact]
+    public void ReadHexString_OddLength_PadsTrailingZero()
+    {
+        // PDF 32000-1:2008 §7.3.4.3: odd digit count → final digit assumed '0'.
+        // "<6>" → 0x60 → '`'
+        var lexer = CreateLexer("<6>");
+        var token = lexer.NextToken();
+        Assert.Equal(PdfTokenType.HexString, token.Type);
+        Assert.Equal("`", token.Value);
+    }
+
+    [Fact]
+    public void ReadHexString_WithEmbeddedWhitespace_IsIgnored()
+    {
+        var lexer = CreateLexer("<48 65\n6C\t6C 6F>");
+        var token = lexer.NextToken();
+        Assert.Equal(PdfTokenType.HexString, token.Type);
+        Assert.Equal("Hello", token.Value);
+    }
+
+    [Fact]
+    public void ReadHexString_WithInvalidChars_SkipsThemInsteadOfThrowing()
+    {
+        // Malformed PDFs may contain stray non-hex bytes inside a hex string.
+        // A tolerant lexer should skip them rather than throw FormatException
+        // (regression: previously crashed via Convert.ToByte → UnobservedTaskException).
+        var lexer = CreateLexer("<48ZZ65 6C6C6F>");
+        var token = lexer.NextToken();
+        Assert.Equal(PdfTokenType.HexString, token.Type);
+        Assert.Equal("Hello", token.Value);
+    }
+
+    [Fact]
+    public void ReadHexString_Empty()
+    {
+        var lexer = CreateLexer("<>");
+        var token = lexer.NextToken();
+        Assert.Equal(PdfTokenType.HexString, token.Type);
+        Assert.Equal(string.Empty, token.Value);
+    }
+
+    [Fact]
     public void ReadBoolean()
     {
         var lexer = CreateLexer("true false");

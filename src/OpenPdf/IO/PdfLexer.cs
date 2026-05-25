@@ -144,7 +144,17 @@ public sealed class PdfLexer
 
     private PdfToken ReadHexString(long pos)
     {
-        var sb = new StringBuilder();
+        // PDF 32000-1:2008 §7.3.4.3:
+        //   - White-space characters shall be ignored.
+        //   - If the final digit of a hexadecimal string is missing (odd count),
+        //     the final digit shall be assumed to be 0.
+        // Defensive against malformed PDFs: skip any byte that is neither a hex
+        // digit nor whitespace, rather than throwing — matches the behaviour of
+        // tolerant readers (poppler, MuPDF). This avoids a hard FormatException
+        // turning into an UnobservedTaskException upstream when a corrupted
+        // /Length tricks the parser into reading garbage as a hex string.
+        var bytes = new List<byte>();
+        int high = -1;
         while (true)
         {
             int b = ReadByte();
@@ -154,15 +164,30 @@ public sealed class PdfLexer
                 break;
             if (IsWhitespace(b))
                 continue;
-            sb.Append((char)b);
+            int digit = HexDigit(b);
+            if (digit < 0)
+                continue;
+            if (high < 0)
+            {
+                high = digit;
+            }
+            else
+            {
+                bytes.Add((byte)((high << 4) | digit));
+                high = -1;
+            }
         }
-        var hex = sb.ToString();
-        if (hex.Length % 2 != 0)
-            hex += "0";
-        var bytes = new byte[hex.Length / 2];
-        for (int i = 0; i < bytes.Length; i++)
-            bytes[i] = Convert.ToByte(hex.Substring(i * 2, 2), 16);
-        return new PdfToken(PdfTokenType.HexString, PdfEncoding.Latin1.GetString(bytes), pos);
+        if (high >= 0)
+            bytes.Add((byte)(high << 4));
+        return new PdfToken(PdfTokenType.HexString, PdfEncoding.Latin1.GetString(bytes.ToArray()), pos);
+    }
+
+    private static int HexDigit(int b)
+    {
+        if (b >= '0' && b <= '9') return b - '0';
+        if (b >= 'a' && b <= 'f') return b - 'a' + 10;
+        if (b >= 'A' && b <= 'F') return b - 'A' + 10;
+        return -1;
     }
 
     private PdfToken ReadName(long pos)
