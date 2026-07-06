@@ -76,11 +76,20 @@ public sealed class XrefReader
     {
         while (true)
         {
+            long lineStart = _stream.Position;
             var line = ReadLine().Trim();
             if (string.IsNullOrEmpty(line))
                 continue;
             if (line.StartsWith("trailer", StringComparison.Ordinal))
+            {
+                // Linearized PDFs sometimes pack the trailer dictionary onto
+                // the same line as the keyword (`trailer<</Root ...>>`).
+                // ReadLine already swallowed the whole line including the
+                // dict, leaving the parser positioned past `>>`. Rewind so
+                // the subsequent ParseObject sees the `<<`.
+                _stream.Position = lineStart + "trailer".Length;
                 break;
+            }
 
             var parts = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length != 2)
