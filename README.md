@@ -8,7 +8,7 @@ A pure C# PDF library with zero external dependencies. Read, write, and edit PDF
 |---|---|
 | **Read** | Parse PDF 1.0-1.7, xref streams (PDF 1.5+), object streams, tolerant/repair mode |
 | **Write** | Generate PDF 1.7, FlateDecode compression, incremental updates, linearized PDF |
-| **Text** | Type1 (standard 14), TrueType/CJK (Japanese/Chinese/Korean) with font subsetting |
+| **Text** | Type1 (standard 14), TrueType/CJK (Japanese/Chinese/Korean) with font subsetting; text extraction from Type0/CIDFontType2 with ToUnicode CMap or Adobe predefined CJK CMaps |
 | **Graphics** | Lines, rectangles, curves, colors (RGB/CMYK), transparency, clipping |
 | **Images** | JPEG, PNG (RGB/RGBA), BMP (24/32-bit) |
 | **Layout** | Text wrapping, tables, bullet/numbered lists, headers/footers, page numbers |
@@ -117,3 +117,14 @@ dotnet add package OpenPdf
 ## License
 
 MIT
+
+### Third-party notices
+
+This package embeds the Adobe CMap resources for CJK text extraction
+(Adobe-Japan1, Adobe-GB1, Adobe-CNS1, Adobe-Korea1 predefined encodings and
+their UCS2 CID→Unicode mappings) from the
+[adobe-type-tools/cmap-resources](https://github.com/adobe-type-tools/cmap-resources)
+and
+[adobe-type-tools/mapping-resources-pdf](https://github.com/adobe-type-tools/mapping-resources-pdf)
+repositories, licensed under BSD-3-Clause. See
+`src/OpenPdf/Resources/CMaps/LICENSE-Adobe-*` for the full license text.

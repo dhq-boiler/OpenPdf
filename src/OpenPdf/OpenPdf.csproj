@@ -7,7 +7,7 @@
 
     <!-- NuGet Package Metadata -->
     <PackageId>OpenPdf</PackageId>
-    <Version>1.6.2</Version>
+    <Version>1.7.0</Version>
     <Authors>dhq_boiler</Authors>
     <Description>A pure C# PDF library for reading, writing, and editing PDF files. Supports Japanese (CJK) text, font subsetting, annotations, bookmarks, form fields, PDF/A-1b, encryption, barcode/QR code generation, and more. No external dependencies.</Description>
     <PackageTags>pdf;pdf-generation;pdf-reader;pdf-writer;csharp;dotnet;cjk;japanese;pdfa;barcode;qrcode</PackageTags>
@@ -24,6 +24,16 @@
 
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- Adobe CMap resources for CJK text extraction. Files are deflate-
+       compressed on disk; PredefinedCMaps decompresses on demand. The
+       LogicalName strips the ".deflate" extension so lookup by CMap name
+       (e.g. "UniJIS-UTF16-H") works uniformly regardless of on-disk layout. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\CMaps\*.deflate">
+      <LogicalName>OpenPdf.Resources.CMaps.$([System.String]::Copy('%(Filename)')).deflate</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <!-- Polyfill for netstandard2.0 -->

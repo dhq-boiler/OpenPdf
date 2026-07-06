@@ -341,6 +341,32 @@ public sealed class TrueTypeFont
 
     public IReadOnlyDictionary<int, ushort> UnicodeToGlyphMap => _unicodeToGlyph;
 
+    private Dictionary<ushort, int>? _glyphToUnicode;
+
+    /// <summary>
+    /// Reverse of the cmap table: glyph id -&gt; first Unicode code point that
+    /// maps to it. Built lazily. When multiple code points share a glyph
+    /// (common for e.g. narrow/wide space variants) the lowest wins, which
+    /// gives the most canonical reading for text extraction.
+    /// </summary>
+    public IReadOnlyDictionary<ushort, int> GlyphToUnicodeMap
+    {
+        get
+        {
+            if (_glyphToUnicode == null)
+            {
+                var d = new Dictionary<ushort, int>();
+                foreach (var kv in _unicodeToGlyph)
+                {
+                    if (!d.TryGetValue(kv.Value, out var existing) || kv.Key < existing)
+                        d[kv.Value] = kv.Key;
+                }
+                _glyphToUnicode = d;
+            }
+            return _glyphToUnicode;
+        }
+    }
+
     // Big-endian reading helpers
     private ushort ReadUInt16(int offset) =>
         (ushort)((_data[offset] << 8) | _data[offset + 1]);
