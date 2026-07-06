@@ -107,13 +107,23 @@ public sealed class PdfPageBuilder
     public void DrawText(string fontName, double fontSize, double x, double y, string text)
     {
         BeginText();
+        DrawTextInline(fontName, fontSize, x, y, text);
+        EndText();
+    }
+
+    /// <summary>
+    /// Like <see cref="DrawText"/> but assumes the caller already opened a
+    /// text object with <c>BT</c>. Useful when wrapping text drawing in
+    /// extra text-state operators (e.g. <c>3 Tr</c> for invisible OCR text).
+    /// </summary>
+    public void DrawTextInline(string fontName, double fontSize, double x, double y, string text)
+    {
         SetFont(fontName, fontSize);
         MoveTextPosition(x, y);
         if (_cidFonts.ContainsKey(fontName))
             ShowUnicodeText(fontName, text);
         else
             ShowText(text);
-        EndText();
     }
 
     // Graphics operations
